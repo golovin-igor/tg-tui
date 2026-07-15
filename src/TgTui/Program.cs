@@ -46,17 +46,25 @@ else
     builder.Services.AddSingleton<IMessageService, WTelegramMessageService>();
 }
 
-builder.Services.AddSingleton<IMediaDownloader>(sp =>
-    new WTelegramMediaDownloader(
-        sp.GetRequiredService<TelegramSession>(),
-        sp.GetRequiredService<TelegramPeerStore>(),
-        sp.GetRequiredService<AppPaths>().MediaCacheDir));
-builder.Services.AddSingleton(sp =>
-    new MediaCache(sp.GetRequiredService<AppPaths>().MediaCacheDir));
-builder.Services.AddSingleton<IMediaService>(sp =>
-    new MediaService(
-        sp.GetRequiredService<MediaCache>(),
-        useFake ? null : sp.GetRequiredService<IMediaDownloader>()));
+if (useFake)
+{
+    // Offline shell: placeholders only (no Telegram download / ImageSharp path).
+    builder.Services.AddSingleton<IMediaService, FakeMediaService>();
+}
+else
+{
+    builder.Services.AddSingleton<IMediaDownloader>(sp =>
+        new WTelegramMediaDownloader(
+            sp.GetRequiredService<TelegramSession>(),
+            sp.GetRequiredService<TelegramPeerStore>(),
+            sp.GetRequiredService<AppPaths>().MediaCacheDir));
+    builder.Services.AddSingleton(sp =>
+        new MediaCache(sp.GetRequiredService<AppPaths>().MediaCacheDir));
+    builder.Services.AddSingleton<IMediaService>(sp =>
+        new MediaService(
+            sp.GetRequiredService<MediaCache>(),
+            sp.GetRequiredService<IMediaDownloader>()));
+}
 
 using var host = builder.Build();
 

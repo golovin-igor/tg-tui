@@ -115,6 +115,10 @@ public sealed class MessagePaneView : View
 
     private void OnListAccepting(object? sender, CommandEventArgs e)
     {
+        // Enter: open media externally when the selected row has an attachment (design §3.4).
+        if (_vm.Selected?.Media is null)
+            return;
+
         e.Handled = true;
         _ = RunAsync(_vm.OpenSelectedMediaExternallyAsync);
     }
@@ -171,7 +175,9 @@ public sealed class MessagePaneView : View
 
         if (key == Key.O)
         {
-            _ = RunAsync(_vm.OpenSelectedMediaExternallyAsync);
+            // `o` always means open media externally when present (no-op without media).
+            if (_vm.Selected?.Media is not null)
+                _ = RunAsync(_vm.OpenSelectedMediaExternallyAsync);
             key.Handled = true;
             return;
         }

@@ -67,15 +67,22 @@ public sealed class MediaService : IMediaService
 
     public string RenderPreview(string localPath, int maxCellWidth)
     {
-        var capability = _getCapability();
-        return capability switch
+        try
         {
-            GraphicsCapability.None => "🖼 (open with o)",
-            GraphicsCapability.HalfBlock => HalfBlockImageRenderer.RenderFile(localPath, maxCellWidth),
-            GraphicsCapability.Kitty or GraphicsCapability.Sixel or GraphicsCapability.ITerm2
-                => ProtocolImageRenderer.RenderFile(localPath, maxCellWidth, capability),
-            _ => HalfBlockImageRenderer.RenderFile(localPath, maxCellWidth)
-        };
+            var capability = _getCapability();
+            return capability switch
+            {
+                GraphicsCapability.None => "🖼 (open with o)",
+                GraphicsCapability.HalfBlock => HalfBlockImageRenderer.RenderFile(localPath, maxCellWidth),
+                GraphicsCapability.Kitty or GraphicsCapability.Sixel or GraphicsCapability.ITerm2
+                    => ProtocolImageRenderer.RenderFile(localPath, maxCellWidth, capability),
+                _ => HalfBlockImageRenderer.RenderFile(localPath, maxCellWidth)
+            };
+        }
+        catch
+        {
+            return HalfBlockImageRenderer.UnavailablePlaceholder;
+        }
     }
 
     /// <summary>
