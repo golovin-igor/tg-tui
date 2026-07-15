@@ -43,7 +43,7 @@ public sealed class FakeMediaService : IMediaService
 
     public string RenderPreview(string localPath, int maxCellWidth)
     {
-        // Always a compact one-line hint — no ImageSharp / protocol dependency in UI.
+        // Always a compact one-line hint — no SkiaSharp / protocol dependency in UI.
         _ = localPath;
         _ = maxCellWidth;
         return PlaceholderPreview;

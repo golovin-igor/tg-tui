@@ -44,7 +44,7 @@ else
 
 if (useFake)
 {
-    // Offline shell: placeholders only (no Telegram download / ImageSharp path).
+    // Offline shell: placeholders only (no Telegram download / SkiaSharp path).
     builder.Services.AddSingleton<IMediaService, FakeMediaService>();
 }
 else

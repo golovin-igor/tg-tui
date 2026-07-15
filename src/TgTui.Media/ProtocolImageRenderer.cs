@@ -1,6 +1,5 @@
 using System.Text;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats.Png;
+using SkiaSharp;
 
 namespace TgTui.Media;
 
@@ -121,9 +120,11 @@ public static class ProtocolImageRenderer
 
     private static byte[] LoadAsPngBytes(string path)
     {
-        using var image = Image.Load(path);
-        using var ms = new MemoryStream();
-        image.Save(ms, new PngEncoder());
-        return ms.ToArray();
+        using var bitmap = SKBitmap.Decode(path)
+            ?? throw new InvalidOperationException($"Failed to decode image: {path}");
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100)
+            ?? throw new InvalidOperationException("Failed to encode PNG.");
+        return data.ToArray();
     }
 }
