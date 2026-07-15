@@ -7,4 +7,10 @@ public sealed class MediaAttachment
     public string? LocalPath { get; init; }
     public string? MimeType { get; init; }
     public long? SizeBytes { get; init; }
+
+    /// <summary>Chat that owns the message containing this media (for on-demand download).</summary>
+    public ChatId? SourceChatId { get; init; }
+
+    /// <summary>Message that contains this media (for on-demand download).</summary>
+    public MessageId? SourceMessageId { get; init; }
 }

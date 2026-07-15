@@ -7,24 +7,35 @@ namespace TgTui.Media;
 public sealed class MediaService : IMediaService
 {
     private readonly MediaCache _cache;
+    private readonly IMediaDownloader? _downloader;
 
-    public MediaService(MediaCache cache)
+    public MediaService(MediaCache cache, IMediaDownloader? downloader = null)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+        _downloader = downloader;
     }
 
     public MediaCache Cache => _cache;
 
-    public Task<string?> EnsureLocalAsync(MediaAttachment media, CancellationToken cancellationToken = default)
+    public async Task<string?> EnsureLocalAsync(MediaAttachment media, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(media);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Telegram download is filled in Task 7. For now, only honor already-local paths.
         if (!string.IsNullOrWhiteSpace(media.LocalPath) && File.Exists(media.LocalPath))
-            return Task.FromResult<string?>(media.LocalPath);
+            return media.LocalPath;
 
-        return Task.FromResult<string?>(null);
+        if (_downloader is not null
+            && media.SourceChatId is { } chatId
+            && media.SourceMessageId is { } messageId)
+        {
+            var downloaded = await _downloader
+                .DownloadMessageMediaAsync(chatId, messageId, cancellationToken)
+                .ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(downloaded) ? null : downloaded;
+        }
+
+        return null;
     }
 
     public Task OpenExternallyAsync(string localPath, CancellationToken cancellationToken = default)

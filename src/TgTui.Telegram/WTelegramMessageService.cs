@@ -1,0 +1,111 @@
+using TgTui.Core.Models;
+using TgTui.Core.Ports;
+using TgTui.Telegram.Mapping;
+using TL;
+using WTelegram;
+
+namespace TgTui.Telegram;
+
+public sealed class WTelegramMessageService : IMessageService
+{
+    private readonly TelegramSession _session;
+    private readonly TelegramPeerStore _peers;
+
+    public WTelegramMessageService(TelegramSession session, TelegramPeerStore peers)
+    {
+        _session = session ?? throw new ArgumentNullException(nameof(session));
+        _peers = peers ?? throw new ArgumentNullException(nameof(peers));
+    }
+
+    public async Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(
+        ChatId chatId,
+        MessageId? beforeId,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (limit <= 0)
+            throw new ArgumentOutOfRangeException(nameof(limit), "limit must be positive.");
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var client = _session.RequireClient();
+        var peer = _peers.Require(chatId);
+
+        var offsetId = beforeId is { } b ? checked((int)b.Value) : 0;
+        var history = await client.Messages_GetHistory(peer, offset_id: offsetId, limit: limit)
+            .ConfigureAwait(false);
+
+        MergePeers(history);
+
+        // History is newest-first from API; present oldest→newest for UI scrolling.
+        var mapped = new List<ChatMessage>();
+        foreach (var msgBase in history.Messages.OrderBy(m => m.ID))
+        {
+            if (msgBase is not Message msg)
+                continue;
+            mapped.Add(TelegramMapper.MapMessage(msg, chatId));
+        }
+
+        return mapped;
+    }
+
+    public async Task<ChatMessage> SendTextAsync(
+        ChatId chatId,
+        string text,
+        MessageId? replyToId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var client = _session.RequireClient();
+        var peer = _peers.Require(chatId);
+        var reply = replyToId is { } r ? checked((int)r.Value) : 0;
+
+        var sent = await client.SendMessageAsync(peer, text, reply_to_msg_id: reply)
+            .ConfigureAwait(false);
+
+        return TelegramMapper.MapMessage(sent, chatId);
+    }
+
+    public async Task EditTextAsync(
+        ChatId chatId,
+        MessageId messageId,
+        string text,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var client = _session.RequireClient();
+        var peer = _peers.Require(chatId);
+
+        await client.Messages_EditMessage(peer, checked((int)messageId.Value), message: text)
+            .ConfigureAwait(false);
+    }
+
+    public async Task DeleteAsync(
+        ChatId chatId,
+        MessageId messageId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var client = _session.RequireClient();
+        var peer = _peers.Require(chatId);
+
+        await client.DeleteMessages(peer, new[] { checked((int)messageId.Value) })
+            .ConfigureAwait(false);
+    }
+
+    private void MergePeers(Messages_MessagesBase history)
+    {
+        switch (history)
+        {
+            case Messages_ChannelMessages channel:
+                _peers.Merge(channel.users, channel.chats);
+                break;
+            case Messages_Messages messages:
+                _peers.Merge(messages.users, messages.chats);
+                break;
+        }
+    }
+}
