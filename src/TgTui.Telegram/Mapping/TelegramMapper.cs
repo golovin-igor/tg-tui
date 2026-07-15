@@ -58,6 +58,56 @@ public static class TelegramMapper
             .ToList();
     }
 
+    /// <summary>
+    /// Indexes the highest-id message per marked peer id (Bot API–style).
+    /// Must not use raw <see cref="Peer.ID"/> — user/chat/channel ids collide.
+    /// </summary>
+    public static Dictionary<long, MessageBase> IndexTopMessagesByMarkedPeer(IEnumerable<MessageBase> messages)
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+
+        var topByPeer = new Dictionary<long, MessageBase>();
+        foreach (var msg in messages)
+        {
+            if (msg.Peer is null)
+                continue;
+
+            var key = PeerId.FromPeer(msg.Peer).Value;
+            if (!topByPeer.TryGetValue(key, out var existing) || msg.ID > existing.ID)
+                topByPeer[key] = msg;
+        }
+
+        return topByPeer;
+    }
+
+    /// <summary>
+    /// Resolves a dialog's top message using a marked-peer index, with linear fallback.
+    /// </summary>
+    public static MessageBase? ResolveTopMessage(
+        Dialog dialog,
+        IReadOnlyDictionary<long, MessageBase> topByMarkedPeer,
+        IEnumerable<MessageBase> allMessages)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+        ArgumentNullException.ThrowIfNull(topByMarkedPeer);
+        ArgumentNullException.ThrowIfNull(allMessages);
+
+        if (dialog.Peer is null)
+            return null;
+
+        var key = PeerId.FromPeer(dialog.Peer).Value;
+        if (topByMarkedPeer.TryGetValue(key, out var candidate)
+            && candidate.ID == dialog.TopMessage)
+        {
+            return candidate;
+        }
+
+        return allMessages.FirstOrDefault(m =>
+            m.Peer is not null
+            && PeerId.FromPeer(m.Peer).Value == key
+            && m.ID == dialog.TopMessage);
+    }
+
     public static string FormatUserTitle(UserBase? user, long? selfUserId = null)
     {
         if (user is null)

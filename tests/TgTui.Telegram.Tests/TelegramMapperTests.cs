@@ -100,6 +100,93 @@ public class TelegramMapperTests
     }
 
     [Fact]
+    public void IndexTopMessagesByMarkedPeer_keeps_user_chat_channel_distinct()
+    {
+        // Same raw Peer.ID (=7) would collide; marked keys must not.
+        const long rawId = 7;
+        var userMsg = new Message
+        {
+            id = 10,
+            message = "user",
+            peer_id = new PeerUser { user_id = rawId },
+            date = DateTime.UtcNow
+        };
+        var chatMsg = new Message
+        {
+            id = 20,
+            message = "chat",
+            peer_id = new PeerChat { chat_id = rawId },
+            date = DateTime.UtcNow
+        };
+        var channelMsg = new Message
+        {
+            id = 30,
+            message = "channel",
+            peer_id = new PeerChannel { channel_id = rawId },
+            date = DateTime.UtcNow
+        };
+        // Older user message with lower id — should lose to userMsg.
+        var olderUser = new Message
+        {
+            id = 5,
+            message = "older",
+            peer_id = new PeerUser { user_id = rawId },
+            date = DateTime.UtcNow
+        };
+
+        var index = TelegramMapper.IndexTopMessagesByMarkedPeer(
+            new MessageBase[] { olderUser, userMsg, chatMsg, channelMsg });
+
+        index.Should().HaveCount(3);
+        index[PeerId.FromUser(rawId).Value].Should().BeSameAs(userMsg);
+        index[PeerId.FromChat(rawId).Value].Should().BeSameAs(chatMsg);
+        index[PeerId.FromChannel(rawId).Value].Should().BeSameAs(channelMsg);
+
+        // Using raw Peer.ID would collapse all three into one key (=7).
+        rawId.Should().Be(userMsg.Peer!.ID);
+        rawId.Should().Be(chatMsg.Peer!.ID);
+        rawId.Should().Be(channelMsg.Peer!.ID);
+    }
+
+    [Fact]
+    public void ResolveTopMessage_uses_marked_peer_key()
+    {
+        const long rawId = 42;
+        var userTop = new Message
+        {
+            id = 5,
+            message = "u",
+            peer_id = new PeerUser { user_id = rawId },
+            date = DateTime.UtcNow
+        };
+        var chatTop = new Message
+        {
+            id = 5,
+            message = "c",
+            peer_id = new PeerChat { chat_id = rawId },
+            date = DateTime.UtcNow
+        };
+        var messages = new MessageBase[] { userTop, chatTop };
+        var index = TelegramMapper.IndexTopMessagesByMarkedPeer(messages);
+
+        var userDialog = new Dialog
+        {
+            peer = new PeerUser { user_id = rawId },
+            top_message = 5,
+            notify_settings = new PeerNotifySettings()
+        };
+        var chatDialog = new Dialog
+        {
+            peer = new PeerChat { chat_id = rawId },
+            top_message = 5,
+            notify_settings = new PeerNotifySettings()
+        };
+
+        TelegramMapper.ResolveTopMessage(userDialog, index, messages).Should().BeSameAs(userTop);
+        TelegramMapper.ResolveTopMessage(chatDialog, index, messages).Should().BeSameAs(chatTop);
+    }
+
+    [Fact]
     public void MapMessage_maps_outgoing_edit_reply_and_photo()
     {
         var msg = new Message

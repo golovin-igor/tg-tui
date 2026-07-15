@@ -61,6 +61,29 @@ public sealed class TelegramPeerStore
         Merge(dialogs.users, dialogs.chats);
     }
 
+    /// <summary>
+    /// Merges users/chats from history / getMessages responses.
+    /// Handles <see cref="Messages_Messages"/>, <see cref="Messages_MessagesSlice"/>
+    /// (inherits messages), and <see cref="Messages_ChannelMessages"/>.
+    /// </summary>
+    public void Merge(Messages_MessagesBase messages)
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+        switch (messages)
+        {
+            case Messages_ChannelMessages channel:
+                Merge(channel.users, channel.chats);
+                break;
+            // Explicit slice arm documents API constructor; Slice subclasses Messages_Messages.
+            case Messages_MessagesSlice slice:
+                Merge(slice.users, slice.chats);
+                break;
+            case Messages_Messages regular:
+                Merge(regular.users, regular.chats);
+                break;
+        }
+    }
+
     public void Put(ChatId chatId, InputPeer peer)
     {
         ArgumentNullException.ThrowIfNull(peer);

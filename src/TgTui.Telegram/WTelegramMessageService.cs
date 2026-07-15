@@ -34,7 +34,7 @@ public sealed class WTelegramMessageService : IMessageService
         var history = await client.Messages_GetHistory(peer, offset_id: offsetId, limit: limit)
             .ConfigureAwait(false);
 
-        MergePeers(history);
+        _peers.Merge(history);
 
         // History is newest-first from API; present oldest→newest for UI scrolling.
         var mapped = new List<ChatMessage>();
@@ -94,18 +94,5 @@ public sealed class WTelegramMessageService : IMessageService
 
         await client.DeleteMessages(peer, new[] { checked((int)messageId.Value) })
             .ConfigureAwait(false);
-    }
-
-    private void MergePeers(Messages_MessagesBase history)
-    {
-        switch (history)
-        {
-            case Messages_ChannelMessages channel:
-                _peers.Merge(channel.users, channel.chats);
-                break;
-            case Messages_Messages messages:
-                _peers.Merge(messages.users, messages.chats);
-                break;
-        }
     }
 }

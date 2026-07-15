@@ -36,10 +36,7 @@ public sealed class WTelegramMediaDownloader : IMediaDownloader
         var bundle = await client.GetMessages(peer, new InputMessage[] { new InputMessageID { id = id } })
             .ConfigureAwait(false);
 
-        if (bundle is Messages_ChannelMessages channel)
-            _peers.Merge(channel.users, channel.chats);
-        else if (bundle is Messages_Messages messages)
-            _peers.Merge(messages.users, messages.chats);
+        _peers.Merge(bundle);
 
         var msg = bundle.Messages.OfType<Message>().FirstOrDefault(m => m.id == id)
             ?? throw new InvalidOperationException($"Message {messageId.Value} not found in chat {chatId.Value}.");

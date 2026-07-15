@@ -27,16 +27,8 @@ public sealed class WTelegramDialogService : IDialogService
         var dialogs = await client.Messages_GetAllDialogs().ConfigureAwait(false);
         _peers.Merge(dialogs);
 
-        var topByPeer = new Dictionary<long, MessageBase>();
-        foreach (var msg in dialogs.messages)
-        {
-            if (msg.Peer is null)
-                continue;
-            // Prefer exact top-message match later; index latest seen per peer id (raw).
-            var key = msg.Peer.ID;
-            if (!topByPeer.TryGetValue(key, out var existing) || msg.ID > existing.ID)
-                topByPeer[key] = msg;
-        }
+        // Marked peer keys (user / -chat / -100channel) — raw Peer.ID collides across types.
+        var topByPeer = TelegramMapper.IndexTopMessagesByMarkedPeer(dialogs.messages);
 
         var selfId = client.User?.id;
         var items = new List<DialogItem>();
@@ -47,20 +39,7 @@ public sealed class WTelegramDialogService : IDialogService
                 continue;
 
             var peerInfo = dialogs.UserOrChat(dialog);
-            MessageBase? top = null;
-            if (topByPeer.TryGetValue(dialog.Peer.ID, out var candidate)
-                && candidate.ID == dialog.TopMessage)
-            {
-                top = candidate;
-            }
-            else
-            {
-                top = dialogs.messages.FirstOrDefault(m =>
-                    m.Peer is not null
-                    && m.Peer.ID == dialog.Peer.ID
-                    && m.ID == dialog.TopMessage);
-            }
-
+            var top = TelegramMapper.ResolveTopMessage(dialog, topByPeer, dialogs.messages);
             items.Add(TelegramMapper.MapDialog(dialog, peerInfo, top, selfId));
         }
 
