@@ -13,7 +13,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TgTui.Core\TgTui.Core.csproj" />
-    <ProjectReference Include="..\TgTui.Media\TgTui.Media.csproj" />
   </ItemGroup>
 
 </Project>

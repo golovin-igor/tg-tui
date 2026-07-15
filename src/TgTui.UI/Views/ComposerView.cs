@@ -105,11 +105,14 @@ public sealed class ComposerView : View
         }
     }
 
-    private void OnContentsChanged(object? sender, EventArgs e)
+#pragma warning disable CS0618 // ContentsChangedEventArgs tied to obsolete TextView
+    private void OnContentsChanged(object? sender, ContentsChangedEventArgs e)
+#pragma warning restore CS0618
     {
         if (_syncingText || _disposed)
             return;
 
+        _ = e;
         _vm.Text = _text.Text ?? "";
         _ = PersistDebouncedAsync();
     }

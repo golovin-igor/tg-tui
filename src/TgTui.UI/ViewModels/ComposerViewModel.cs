@@ -99,12 +99,15 @@ public sealed class ComposerViewModel
 
     /// <summary>
     /// Cancels reply or edit. Returns <c>true</c> if something was canceled.
+    /// When canceling edit, restores composer text from the saved draft so a later
+    /// <see cref="PersistDraftAsync"/> does not overwrite the real draft with the edit body.
     /// </summary>
     public bool CancelReplyOrEdit()
     {
         if (_editMessageId is not null)
         {
             _editMessageId = null;
+            _text = _chatId is { } id ? (_drafts.GetDraft(id) ?? "") : "";
             RaiseChanged();
             return true;
         }

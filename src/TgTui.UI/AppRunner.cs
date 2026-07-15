@@ -44,7 +44,7 @@ public static class AppRunner
             Dialogs: new Fakes.FakeDialogService(),
             Messages: new Fakes.FakeMessageService(),
             Drafts: drafts,
-            Media: new Media.MediaService(new Media.MediaCache(Path.Combine(Path.GetTempPath(), "tg-tui-media-fallback"))),
+            Media: new Fakes.FakeMediaService(),
             Updates: updateHub ?? new Fakes.FakeUpdateHub());
         Run(shell, authService, skipAuth: false);
     }
