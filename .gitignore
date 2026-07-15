@@ -1,7 +1,6 @@
-# Superpowers / local agent tooling (preserve existing ignores)
+# Superpowers / local agent tooling (scratch only — design docs under docs/ are public)
 .superpowers/
 /.superpowers
-/docs/superpowers
 
 # Build outputs
 bin/
