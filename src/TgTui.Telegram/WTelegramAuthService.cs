@@ -21,7 +21,6 @@ public sealed class WTelegramAuthService : IAuthService
     private string? _phone;
     private string? _code;
     private string? _password;
-    private AuthPhase _retryPhase = AuthPhase.NeedsCredentials;
 
     public WTelegramAuthService(
         AppPaths paths,
@@ -75,7 +74,7 @@ public sealed class WTelegramAuthService : IAuthService
         }
         catch (Exception ex)
         {
-            Fail(AuthPhase.NeedsPhone, ex.Message);
+            Fail(ex.Message);
         }
     }
 
@@ -97,7 +96,6 @@ public sealed class WTelegramAuthService : IAuthService
 
         var next = AuthFlow.NextPhase(Current.Phase, AuthEvent.CredentialsSubmitted);
         SetState(next);
-        _retryPhase = AuthPhase.NeedsPhone;
     }
 
     public async Task SubmitPhoneAsync(string phone, CancellationToken cancellationToken = default)
@@ -122,23 +120,21 @@ public sealed class WTelegramAuthService : IAuthService
             if (IsCodeRequest(needed))
             {
                 SetState(AuthPhase.NeedsCode);
-                _retryPhase = AuthPhase.NeedsCode;
                 return;
             }
 
             if (IsPasswordRequest(needed))
             {
                 SetState(AuthPhase.NeedsPassword);
-                _retryPhase = AuthPhase.NeedsPassword;
                 return;
             }
 
             // Unexpected next step (e.g. signup name) — surface as failed with hint.
-            Fail(AuthPhase.NeedsPhone, $"Login requires unexpected step: {needed}");
+            Fail($"Login requires unexpected step: {needed}");
         }
         catch (Exception ex)
         {
-            Fail(AuthPhase.NeedsPhone, ex.Message);
+            Fail(ex.Message);
         }
     }
 
@@ -162,15 +158,14 @@ public sealed class WTelegramAuthService : IAuthService
             if (IsPasswordRequest(needed))
             {
                 SetState(AuthPhase.NeedsPassword);
-                _retryPhase = AuthPhase.NeedsPassword;
                 return;
             }
 
-            Fail(AuthPhase.NeedsCode, $"Login requires unexpected step: {needed}");
+            Fail($"Login requires unexpected step: {needed}");
         }
         catch (Exception ex)
         {
-            Fail(AuthPhase.NeedsCode, ex.Message);
+            Fail(ex.Message);
         }
     }
 
@@ -191,11 +186,11 @@ public sealed class WTelegramAuthService : IAuthService
                 return;
             }
 
-            Fail(AuthPhase.NeedsPassword, $"Login requires unexpected step: {needed}");
+            Fail($"Login requires unexpected step: {needed}");
         }
         catch (Exception ex)
         {
-            Fail(AuthPhase.NeedsPassword, ex.Message);
+            Fail(ex.Message);
         }
     }
 
@@ -207,23 +202,26 @@ public sealed class WTelegramAuthService : IAuthService
             return;
         }
 
+        if (IsPhoneRequest(needed))
+        {
+            SetState(AuthPhase.NeedsPhone);
+            return;
+        }
+
         if (IsCodeRequest(needed))
         {
             SetState(AuthPhase.NeedsCode);
-            _retryPhase = AuthPhase.NeedsCode;
             return;
         }
 
         if (IsPasswordRequest(needed))
         {
             SetState(AuthPhase.NeedsPassword);
-            _retryPhase = AuthPhase.NeedsPassword;
             return;
         }
 
-        // Not logged in; need phone (or session empty).
+        // Unknown step with existing credentials — ask for phone as the safe default.
         SetState(AuthPhase.NeedsPhone);
-        _retryPhase = AuthPhase.NeedsPhone;
     }
 
     private void EnsureClient(bool forceRecreate = false)
@@ -251,22 +249,21 @@ public sealed class WTelegramAuthService : IAuthService
 
     private void SetState(AuthPhase phase, string? message = null)
     {
-        if (phase != AuthPhase.Failed)
-            _retryPhase = phase;
-
         Current = new AuthState(phase, message);
         _hub.Publish(new AuthStateChanged(Current));
     }
 
-    private void Fail(AuthPhase retryPhase, string message)
+    private void Fail(string message)
     {
-        _retryPhase = retryPhase;
         Current = new AuthState(AuthPhase.Failed, message);
         _hub.Publish(new AuthStateChanged(Current));
     }
 
+    private static bool IsPhoneRequest(string needed) =>
+        needed is "phone_number";
+
     private static bool IsCodeRequest(string needed) =>
-        needed is "verification_code" or "phone_number";
+        needed is "verification_code";
 
     private static bool IsPasswordRequest(string needed) =>
         needed is "password";

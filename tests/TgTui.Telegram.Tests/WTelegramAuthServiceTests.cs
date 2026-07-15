@@ -36,11 +36,13 @@ public class WTelegramAuthServiceTests
         reloaded.Current.ApiHash.Should().Be("0123456789abcdef0123456789abcdef");
     }
 
+    private const string ValidApiHash = "0123456789abcdef0123456789abcdef";
+
     [Fact]
     public async Task Full_login_flow_with_stubbed_login_reaches_Ready()
     {
         await using var fixture = await AuthFixture.CreateAsync(
-            config: new AppConfig { ApiId = 1, ApiHash = "hash" },
+            config: new AppConfig { ApiId = 1, ApiHash = ValidApiHash },
             loginResponses: new Queue<string?>(new string?[]
             {
                 "phone_number",       // StartAsync → NeedsPhone
@@ -66,7 +68,7 @@ public class WTelegramAuthServiceTests
     public async Task Start_with_existing_session_stub_is_Ready()
     {
         await using var fixture = await AuthFixture.CreateAsync(
-            config: new AppConfig { ApiId = 1, ApiHash = "hash" },
+            config: new AppConfig { ApiId = 1, ApiHash = ValidApiHash },
             loginResponses: new Queue<string?>(new string?[] { null }));
 
         await fixture.Service.StartAsync();
@@ -77,7 +79,7 @@ public class WTelegramAuthServiceTests
     public async Task Login_error_sets_Failed_with_message()
     {
         await using var fixture = await AuthFixture.CreateAsync(
-            config: new AppConfig { ApiId = 1, ApiHash = "hash" },
+            config: new AppConfig { ApiId = 1, ApiHash = ValidApiHash },
             loginError: new InvalidOperationException("FLOOD_WAIT_30"));
 
         await fixture.Service.StartAsync();
