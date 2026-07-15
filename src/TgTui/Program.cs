@@ -23,14 +23,10 @@ builder.Services.AddSingleton<IDraftStore>(sp =>
 
 if (useFake)
 {
+    // Offline shell: no WTelegram / auth. skipAuth opens ChatShellView immediately.
     builder.Services.AddSingleton<IDialogService, FakeDialogService>();
     builder.Services.AddSingleton<IMessageService, FakeMessageService>();
     builder.Services.AddSingleton<IUpdateHub, FakeUpdateHub>();
-    // Auth is unused when TG_TUI_FAKE=1 (shell opens immediately), but keep a registration
-    // so host resolution remains consistent for tools that inspect the container.
-    builder.Services.AddSingleton<TelegramSession>();
-    builder.Services.AddSingleton<TelegramPeerStore>();
-    builder.Services.AddSingleton<IAuthService, WTelegramAuthService>();
 }
 else
 {

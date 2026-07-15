@@ -65,7 +65,7 @@ Dependency direction: **UI → Core ← Telegram / Media**. The host wires every
 - **SOLID / DRY / SRP** — search the codebase for existing helpers before adding new ones
 - Target framework: `net10.0`
 - Keep secrets out of source: no `session.dat`, `api_hash`, phone codes, or real config with credentials in PRs
-- Do not commit paths ignored by `.gitignore` (`session.dat`, `config.toml`, `cache/`, `logs/`, `drafts.json`, local `publish/`)
+- Do not commit paths ignored by `.gitignore` (`session.dat`, `config.toml`, `media/`, `cache/`, `logs/`, `drafts.json`, local `publish/`)
 
 ## Secrets & security
 

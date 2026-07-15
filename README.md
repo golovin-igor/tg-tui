@@ -2,12 +2,10 @@
 
 A keyboard-first Telegram client for the terminal — full user MTProto login, split-pane chat, and smart inline media.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/OWNER/tg-tui/ci.yml?branch=main&label=build)](https://github.com/OWNER/tg-tui/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=github-actions&logoColor=white)](.github/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-informational)](#install)
-
-> Replace `OWNER` in the build badge URL with your GitHub user or org once the repo is published.
 
 ```
 ┌─ tg-tui  ·  connected  ·  ? help · q quit · Ctrl+L redraw ──────────────┐
@@ -71,7 +69,7 @@ Extract and run `tg-tui` (or `tg-tui.exe` on Windows).
 Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 
 ```bash
-git clone https://github.com/OWNER/tg-tui.git
+git clone <repo-url> tg-tui
 cd tg-tui
 dotnet run --project src/TgTui
 ```

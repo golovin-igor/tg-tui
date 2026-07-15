@@ -20,9 +20,11 @@ Thumbs.db
 # Runtime data & secrets (never commit)
 **/session.dat
 **/config.toml
-**/cache/
-**/logs/
 **/drafts.json
+**/logs/
+# Media cache (AppPaths.MediaCacheDir = media/; design also mentioned cache/)
+**/media/
+**/cache/
 
 # NuGet
 *.nupkg
@@ -35,3 +37,4 @@ TestResults/
 coverage/
 *.coverage
 *.coveragexml
+/docs/superpowers
