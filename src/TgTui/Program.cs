@@ -1,1 +1,3 @@
-Console.WriteLine("tg-tui scaffold OK");
+using TgTui.UI;
+
+AppRunner.Run();

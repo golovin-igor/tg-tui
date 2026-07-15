@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Diagnostics;
 using TgTui.Core.Models;
 using TgTui.Core.Ports;
@@ -8,11 +9,16 @@ public sealed class MediaService : IMediaService
 {
     private readonly MediaCache _cache;
     private readonly IMediaDownloader? _downloader;
+    private readonly Func<GraphicsCapability> _getCapability;
 
-    public MediaService(MediaCache cache, IMediaDownloader? downloader = null)
+    public MediaService(
+        MediaCache cache,
+        IMediaDownloader? downloader = null,
+        Func<GraphicsCapability>? getCapability = null)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _downloader = downloader;
+        _getCapability = getCapability ?? DetectFromEnvironment;
     }
 
     public MediaCache Cache => _cache;
@@ -25,17 +31,27 @@ public sealed class MediaService : IMediaService
         if (!string.IsNullOrWhiteSpace(media.LocalPath) && File.Exists(media.LocalPath))
             return media.LocalPath;
 
-        if (_downloader is not null
-            && media.SourceChatId is { } chatId
-            && media.SourceMessageId is { } messageId)
-        {
-            var downloaded = await _downloader
-                .DownloadMessageMediaAsync(chatId, messageId, cancellationToken)
-                .ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(downloaded) ? null : downloaded;
-        }
+        if (media.SourceChatId is not { } chatId || media.SourceMessageId is not { } messageId)
+            return null;
 
-        return null;
+        var cacheKey = CacheKey(chatId, messageId);
+        if (_cache.Exists(cacheKey))
+            return _cache.GetPath(cacheKey);
+
+        if (_downloader is null)
+            return null;
+
+        var downloaded = await _downloader
+            .DownloadMessageMediaAsync(chatId, messageId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(downloaded) || !File.Exists(downloaded))
+            return null;
+
+        await using (var stream = File.OpenRead(downloaded))
+            _cache.Put(cacheKey, stream);
+
+        return _cache.GetPath(cacheKey);
     }
 
     public Task OpenExternallyAsync(string localPath, CancellationToken cancellationToken = default)
@@ -49,8 +65,18 @@ public sealed class MediaService : IMediaService
         return Task.CompletedTask;
     }
 
-    public string RenderPreview(string localPath, int maxCellWidth) =>
-        HalfBlockImageRenderer.RenderFile(localPath, maxCellWidth);
+    public string RenderPreview(string localPath, int maxCellWidth)
+    {
+        var capability = _getCapability();
+        return capability switch
+        {
+            GraphicsCapability.None => "🖼 (open with o)",
+            GraphicsCapability.HalfBlock => HalfBlockImageRenderer.RenderFile(localPath, maxCellWidth),
+            GraphicsCapability.Kitty or GraphicsCapability.Sixel or GraphicsCapability.ITerm2
+                => ProtocolImageRenderer.RenderFile(localPath, maxCellWidth, capability),
+            _ => HalfBlockImageRenderer.RenderFile(localPath, maxCellWidth)
+        };
+    }
 
     /// <summary>
     /// Builds a platform-specific process start info to open a file externally.
@@ -88,5 +114,22 @@ public sealed class MediaService : IMediaService
             FileName = path,
             UseShellExecute = true
         };
+    }
+
+    internal static string CacheKey(ChatId chatId, MessageId messageId) =>
+        $"{chatId.Value}_{messageId.Value}";
+
+    private static GraphicsCapability DetectFromEnvironment()
+    {
+        var env = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
+        {
+            var key = entry.Key?.ToString();
+            if (key is null)
+                continue;
+            env[key] = entry.Value?.ToString();
+        }
+
+        return new TerminalCapabilityDetector().Detect(env);
     }
 }

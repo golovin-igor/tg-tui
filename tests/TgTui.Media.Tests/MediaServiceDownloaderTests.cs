@@ -11,11 +11,13 @@ public class MediaServiceDownloaderTests
     public async Task EnsureLocalAsync_uses_downloader_when_no_local_path()
     {
         var expected = Path.Combine(Path.GetTempPath(), "tg-tui-dl-" + Guid.NewGuid().ToString("N") + ".bin");
+        var cacheRoot = Path.Combine(Path.GetTempPath(), "tg-tui-dl-cache-" + Guid.NewGuid().ToString("N"));
         await File.WriteAllTextAsync(expected, "data");
         try
         {
+            var cache = new MediaCache(cacheRoot);
             var downloader = new FakeDownloader(expected);
-            var service = new MediaService(new MediaCache(Path.Combine(Path.GetTempPath(), "cache")), downloader);
+            var service = new MediaService(cache, downloader);
             var media = new MediaAttachment
             {
                 Kind = "photo",
@@ -24,13 +26,16 @@ public class MediaServiceDownloaderTests
             };
 
             var result = await service.EnsureLocalAsync(media);
-            result.Should().Be(expected);
+            result.Should().Be(cache.GetPath("1_2"));
+            File.Exists(result).Should().BeTrue();
             downloader.Calls.Should().Be(1);
         }
         finally
         {
             if (File.Exists(expected))
                 File.Delete(expected);
+            if (Directory.Exists(cacheRoot))
+                Directory.Delete(cacheRoot, recursive: true);
         }
     }
 
