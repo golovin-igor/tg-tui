@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TgTui.Core/TgTui.Core.csproj" />
+    <Project Path="src/TgTui.Media/TgTui.Media.csproj" />
+    <Project Path="src/TgTui.Telegram/TgTui.Telegram.csproj" />
+    <Project Path="src/TgTui.UI/TgTui.UI.csproj" />
+    <Project Path="src/TgTui/TgTui.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TgTui.Core.Tests/TgTui.Core.Tests.csproj" />
+    <Project Path="tests/TgTui.Media.Tests/TgTui.Media.Tests.csproj" />
+    <Project Path="tests/TgTui.Telegram.Tests/TgTui.Telegram.Tests.csproj" />
+  </Folder>
+</Solution>

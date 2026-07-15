@@ -1,0 +1,38 @@
+# Superpowers / local agent tooling (preserve existing ignores)
+.superpowers/
+/.superpowers
+/docs/superpowers
+
+# Build outputs
+bin/
+obj/
+publish/
+artifacts/
+
+# IDE / OS
+.vs/
+.idea/
+*.user
+*.userosscache
+*.suo
+.DS_Store
+Thumbs.db
+
+# Runtime data & secrets (never commit)
+**/session.dat
+**/config.toml
+**/cache/
+**/logs/
+**/drafts.json
+
+# NuGet
+*.nupkg
+**/packages/
+project.lock.json
+project.fragment.lock.json
+
+# Test / coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
