@@ -130,7 +130,9 @@ public sealed class ChatShellView : View
         _messagePane.RequestFocusDialogs += OnRequestFocusDialogs;
         _messagePane.ReplyRequested += OnReplyRequested;
         _messagePane.EditRequested += OnEditRequested;
-        _composer.MessageSent += OnMessageSent;
+        _composer.OptimisticPresented += OnOptimisticPresented;
+        _composer.MessageSubmitted += OnMessageSubmitted;
+        _composer.SendFailed += OnSendFailed;
         _composer.LeaveRequested += OnComposerLeaveRequested;
 
         KeyDown += OnShellKeyDown;
@@ -188,7 +190,9 @@ public sealed class ChatShellView : View
             _messagePane.RequestFocusDialogs -= OnRequestFocusDialogs;
             _messagePane.ReplyRequested -= OnReplyRequested;
             _messagePane.EditRequested -= OnEditRequested;
-            _composer.MessageSent -= OnMessageSent;
+            _composer.OptimisticPresented -= OnOptimisticPresented;
+            _composer.MessageSubmitted -= OnMessageSubmitted;
+            _composer.SendFailed -= OnSendFailed;
             _composer.LeaveRequested -= OnComposerLeaveRequested;
 
             _dialogVm.Dispose();
@@ -264,24 +268,43 @@ public sealed class ChatShellView : View
         UpdateChrome();
     }
 
-    private void OnMessageSent() => _ = AfterSubmitAsync();
-
-    private async Task AfterSubmitAsync()
+    private void OnOptimisticPresented(ChatMessage message)
     {
-        try
+        Marshal(() =>
         {
-            await _messageVm.ReloadAsync().ConfigureAwait(true);
-            Marshal(() =>
+            _messageVm.PresentOptimistic(message);
+            UpdateChrome();
+        });
+    }
+
+    private void OnMessageSubmitted(ComposerSubmitOutcome outcome)
+    {
+        Marshal(() =>
+        {
+            if (outcome.IsEdit)
             {
-                _messageVm.JumpToLatest();
-                SetFocusZone(FocusZone.Messages);
-                UpdateChrome();
-            });
-        }
-        catch
+                if (outcome.EditedMessageId is { } editId && outcome.EditedText is not null)
+                    _messageVm.ApplyLocalEdit(editId, outcome.EditedText);
+            }
+            else if (outcome.OptimisticMessage is { } opt && outcome.ConfirmedMessage is { } confirmed)
+            {
+                _messageVm.ConfirmOptimistic(opt.Id, confirmed);
+            }
+
+            _messageVm.JumpToLatest();
+            SetFocusZone(FocusZone.Messages);
+            UpdateChrome();
+        });
+    }
+
+    private void OnSendFailed(MessageId optimisticId)
+    {
+        Marshal(() =>
         {
-            // ignore reload failures
-        }
+            _messageVm.CancelOptimistic(optimisticId);
+            SetFocusZone(FocusZone.Composer);
+            _statusBar.SetContext("send failed · fix text and retry");
+        });
     }
 
     private void SetFocusZone(FocusZone zone)

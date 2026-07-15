@@ -14,11 +14,16 @@ public sealed class FakeMessageService : IMessageService
 
     public FakeMessageService()
     {
-        Seed(
-            new ChatId(1),
-            Incoming(1, 101, "Hey! Are we still on for coffee?", minutesAgo: 40),
-            Outgoing(1, 102, "Yes — 5pm works", minutesAgo: 35, read: true),
-            Incoming(1, 103, "See you at 5?", minutesAgo: 12));
+        // Chat 1 has a long history so load-older pagination is exercisable offline.
+        var alice = new List<ChatMessage>();
+        for (var i = 1; i <= 80; i++)
+        {
+            alice.Add(i % 3 == 0
+                ? Outgoing(1, i, $"Alice thread msg #{i}", minutesAgo: 80 - i + 1, read: true)
+                : Incoming(1, i, $"Alice thread msg #{i}", minutesAgo: 80 - i + 1));
+        }
+
+        Seed(new ChatId(1), alice.ToArray());
 
         Seed(
             new ChatId(2),

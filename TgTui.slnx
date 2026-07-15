@@ -10,5 +10,6 @@
     <Project Path="tests/TgTui.Core.Tests/TgTui.Core.Tests.csproj" />
     <Project Path="tests/TgTui.Media.Tests/TgTui.Media.Tests.csproj" />
     <Project Path="tests/TgTui.Telegram.Tests/TgTui.Telegram.Tests.csproj" />
+    <Project Path="tests/TgTui.UI.Tests/TgTui.UI.Tests.csproj" />
   </Folder>
 </Solution>

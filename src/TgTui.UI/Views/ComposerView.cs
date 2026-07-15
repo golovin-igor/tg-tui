@@ -2,6 +2,7 @@ using Terminal.Gui.App;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
+using TgTui.Core.Models;
 using TgTui.UI.ViewModels;
 
 namespace TgTui.UI.Views;
@@ -61,8 +62,16 @@ public sealed class ComposerView : View
         SyncFromViewModel();
     }
 
-    /// <summary>Raised after a successful send or edit so the shell can refresh messages.</summary>
-    public event Action? MessageSent;
+    /// <summary>
+    /// Raised when an optimistic outgoing message should appear in the pane (before network ack).
+    /// </summary>
+    public event Action<ChatMessage>? OptimisticPresented;
+
+    /// <summary>Raised after a successful send or edit so the shell can reconcile the pane.</summary>
+    public event Action<ComposerSubmitOutcome>? MessageSubmitted;
+
+    /// <summary>Raised when a send fails after an optimistic row was shown.</summary>
+    public event Action<MessageId>? SendFailed;
 
     /// <summary>Esc with no reply/edit — leave composer.</summary>
     public event Action? LeaveRequested;
@@ -155,8 +164,16 @@ public sealed class ComposerView : View
         try
         {
             _vm.Text = _text.Text ?? "";
-            await _vm.SubmitAsync().ConfigureAwait(true);
-            MessageSent?.Invoke();
+            var outcome = await _vm
+                .SubmitAsync(presentOptimistic: msg => OptimisticPresented?.Invoke(msg))
+                .ConfigureAwait(true);
+
+            if (outcome is not null)
+                MessageSubmitted?.Invoke(outcome);
+        }
+        catch (ComposerSendException ex)
+        {
+            SendFailed?.Invoke(ex.OptimisticId);
         }
         catch
         {

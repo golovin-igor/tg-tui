@@ -8,6 +8,8 @@ namespace TgTui.UI.ViewModels;
 /// </summary>
 public sealed class ComposerViewModel
 {
+    private static long s_nextOptimisticId;
+
     private readonly IMessageService _messages;
     private readonly IDraftStore _drafts;
     private ChatId? _chatId;
@@ -138,9 +140,12 @@ public sealed class ComposerViewModel
     }
 
     /// <summary>
-    /// Sends a new message or applies an in-progress edit. Returns the sent message when created.
+    /// Sends a new message (optimistic present via callback) or applies an in-progress edit.
+    /// Returns <c>null</c> when there is nothing to submit.
     /// </summary>
-    public async Task<ChatMessage?> SubmitAsync(CancellationToken cancellationToken = default)
+    public async Task<ComposerSubmitOutcome?> SubmitAsync(
+        Action<ChatMessage>? presentOptimistic = null,
+        CancellationToken cancellationToken = default)
     {
         if (_chatId is not { } id)
             return null;
@@ -155,19 +160,68 @@ public sealed class ComposerViewModel
             _editMessageId = null;
             _text = _drafts.GetDraft(id) ?? "";
             RaiseChanged();
-            return null;
+            return new ComposerSubmitOutcome
+            {
+                IsEdit = true,
+                EditedMessageId = editId,
+                EditedText = body,
+            };
         }
 
-        var sent = await _messages
-            .SendTextAsync(id, body, _replyToId, cancellationToken)
-            .ConfigureAwait(false);
+        var replyTo = _replyToId;
+        var optimistic = new ChatMessage
+        {
+            Id = new MessageId(Interlocked.Decrement(ref s_nextOptimisticId)),
+            ChatId = id,
+            Text = body,
+            IsOutgoing = true,
+            SentAt = DateTimeOffset.Now,
+            IsEdited = false,
+            ReplyToId = replyTo,
+            Media = null,
+            IsRead = false,
+        };
 
+        // Clear composer immediately so the UI feels instant.
         _text = "";
         _replyToId = null;
         _drafts.SetDraft(id, null);
         await _drafts.SaveAsync(cancellationToken).ConfigureAwait(false);
         RaiseChanged();
-        return sent;
+
+        presentOptimistic?.Invoke(optimistic);
+
+        try
+        {
+            var sent = await _messages
+                .SendTextAsync(id, body, replyTo, cancellationToken)
+                .ConfigureAwait(false);
+
+            return new ComposerSubmitOutcome
+            {
+                IsEdit = false,
+                OptimisticMessage = optimistic,
+                ConfirmedMessage = sent,
+            };
+        }
+        catch (Exception ex)
+        {
+            // Restore composer so the user can retry; drop optimistic via ComposerSendException.
+            _text = body;
+            _replyToId = replyTo;
+            _drafts.SetDraft(id, body);
+            try
+            {
+                await _drafts.SaveAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // ignore draft restore IO errors
+            }
+
+            RaiseChanged();
+            throw new ComposerSendException(optimistic.Id, "Send failed.", ex);
+        }
     }
 
     private void RaiseChanged() => Changed?.Invoke();
