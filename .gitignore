@@ -1,6 +1,7 @@
-# Superpowers / local agent tooling (scratch only — design docs under docs/ are public)
+# Superpowers / local agent tooling (session scratch + design/plan docs)
 .superpowers/
 /.superpowers
+docs/superpowers/
 
 # Build outputs
 bin/
@@ -37,4 +38,3 @@ TestResults/
 coverage/
 *.coverage
 *.coveragexml
-/docs/superpowers
