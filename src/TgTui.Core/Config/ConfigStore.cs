@@ -1,4 +1,5 @@
 using Tomlyn;
+using TgTui.Core.Paths;
 
 namespace TgTui.Core.Config;
 
@@ -9,6 +10,12 @@ public sealed class ConfigStore
     public ConfigStore(string path)
     {
         _path = path;
+    }
+
+    /// <summary>DI-friendly constructor using <see cref="AppPaths.ConfigFile"/>.</summary>
+    public ConfigStore(AppPaths paths)
+        : this((paths ?? throw new ArgumentNullException(nameof(paths))).ConfigFile)
+    {
     }
 
     public AppConfig Current { get; private set; } = new();
