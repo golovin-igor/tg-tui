@@ -25,6 +25,19 @@ public sealed class MessagePaneViewModelTests
     }
 
     [Fact]
+    public async Task OpenChat_raises_ChatMarkedRead()
+    {
+        var messages = new FakeMessageService();
+        using var vm = new MessagePaneViewModel(messages, new FakeMediaService());
+        ChatId? marked = null;
+        vm.ChatMarkedRead += id => marked = id;
+
+        await vm.OpenChatAsync(Alice());
+
+        marked.Should().Be(new ChatId(1));
+    }
+
+    [Fact]
     public async Task LoadOlder_prepends_previous_page_and_preserves_selection()
     {
         var messages = new FakeMessageService();
@@ -343,6 +356,9 @@ public sealed class MessagePaneViewModelTests
             _items.RemoveAll(m => m.Id.Value == messageId.Value);
             return Task.CompletedTask;
         }
+
+        public Task MarkReadAsync(ChatId chatId, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 
     private sealed class ControllableMediaService : IMediaService

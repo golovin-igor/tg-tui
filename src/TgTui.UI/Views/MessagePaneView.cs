@@ -54,6 +54,9 @@ public sealed class MessagePaneView : View
     public event Action? ReplyRequested;
     public event Action? EditRequested;
 
+    /// <summary>Raised when delete / media open fails.</summary>
+    public event Action<string>? ErrorOccurred;
+
     public void FocusList() => _list.SetFocus();
 
     /// <inheritdoc />
@@ -218,9 +221,9 @@ public sealed class MessagePaneView : View
         {
             await action(CancellationToken.None).ConfigureAwait(true);
         }
-        catch
+        catch (Exception ex)
         {
-            // keep UI alive
+            ErrorOccurred?.Invoke(ex.Message);
         }
     }
 

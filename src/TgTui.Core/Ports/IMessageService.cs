@@ -8,4 +8,9 @@ public interface IMessageService
     Task<ChatMessage> SendTextAsync(ChatId chatId, string text, MessageId? replyToId, CancellationToken cancellationToken = default);
     Task EditTextAsync(ChatId chatId, MessageId messageId, string text, CancellationToken cancellationToken = default);
     Task DeleteAsync(ChatId chatId, MessageId messageId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Marks the peer history as read up to the latest message (clears unread for this chat).
+    /// </summary>
+    Task MarkReadAsync(ChatId chatId, CancellationToken cancellationToken = default);
 }

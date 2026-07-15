@@ -36,16 +36,40 @@ public sealed class WTelegramMessageService : IMessageService
 
         _peers.Merge(history);
 
+        int? readInbox = null;
+        int? readOutbox = null;
+        if (_peers.TryGetReadMarkers(chatId, out var inboxMax, out var outboxMax))
+        {
+            readInbox = inboxMax;
+            readOutbox = outboxMax;
+        }
+
         // History is newest-first from API; present oldest→newest for UI scrolling.
         var mapped = new List<ChatMessage>();
         foreach (var msgBase in history.Messages.OrderBy(m => m.ID))
         {
             if (msgBase is not Message msg)
                 continue;
-            mapped.Add(TelegramMapper.MapMessage(msg, chatId));
+            mapped.Add(TelegramMapper.MapMessage(msg, chatId, readInbox, readOutbox));
         }
 
         return mapped;
+    }
+
+    public async Task MarkReadAsync(ChatId chatId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var client = _session.RequireClient();
+        var peer = _peers.Require(chatId);
+
+        // max_id 0 = read up to the latest message (WTelegram Client.ReadHistory helper).
+        await client.ReadHistory(peer).ConfigureAwait(false);
+
+        // Incoming messages are now read; preserve existing outbox marker (peer read our messages).
+        var outbox = _peers.TryGetReadMarkers(chatId, out _, out var existingOutbox)
+            ? existingOutbox
+            : 0;
+        _peers.SetReadMarkers(chatId, int.MaxValue, outbox);
     }
 
     public async Task<ChatMessage> SendTextAsync(

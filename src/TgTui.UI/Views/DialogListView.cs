@@ -76,6 +76,9 @@ public sealed class DialogListView : View
     /// <summary>Raised when the user opens the selected dialog (Enter / l).</summary>
     public event Action<DialogItem>? DialogOpened;
 
+    /// <summary>Raised when a dialog mutation (mute/pin) fails.</summary>
+    public event Action<string>? ErrorOccurred;
+
     /// <summary>Called by the shell when this zone gains focus.</summary>
     public void FocusList()
     {
@@ -259,9 +262,9 @@ public sealed class DialogListView : View
         {
             await action(CancellationToken.None).ConfigureAwait(true);
         }
-        catch
+        catch (Exception ex)
         {
-            // Surface stays silent; status bar can be extended later for errors.
+            ErrorOccurred?.Invoke(ex.Message);
         }
     }
 

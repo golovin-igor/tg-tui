@@ -126,10 +126,13 @@ public sealed class ChatShellView : View
         Add(_dialogsFrame, _header, _messagesFrame, _composerFrame, _statusBar);
 
         _dialogList.DialogOpened += OnDialogOpened;
+        _dialogList.ErrorOccurred += OnShellError;
         _messagePane.RequestFocusComposer += OnRequestFocusComposer;
         _messagePane.RequestFocusDialogs += OnRequestFocusDialogs;
         _messagePane.ReplyRequested += OnReplyRequested;
         _messagePane.EditRequested += OnEditRequested;
+        _messagePane.ErrorOccurred += OnShellError;
+        _messageVm.ChatMarkedRead += OnChatMarkedRead;
         _composer.OptimisticPresented += OnOptimisticPresented;
         _composer.MessageSubmitted += OnMessageSubmitted;
         _composer.SendFailed += OnSendFailed;
@@ -186,10 +189,13 @@ public sealed class ChatShellView : View
             _disposed = true;
             KeyDown -= OnShellKeyDown;
             _dialogList.DialogOpened -= OnDialogOpened;
+            _dialogList.ErrorOccurred -= OnShellError;
             _messagePane.RequestFocusComposer -= OnRequestFocusComposer;
             _messagePane.RequestFocusDialogs -= OnRequestFocusDialogs;
             _messagePane.ReplyRequested -= OnReplyRequested;
             _messagePane.EditRequested -= OnEditRequested;
+            _messagePane.ErrorOccurred -= OnShellError;
+            _messageVm.ChatMarkedRead -= OnChatMarkedRead;
             _composer.OptimisticPresented -= OnOptimisticPresented;
             _composer.MessageSubmitted -= OnMessageSubmitted;
             _composer.SendFailed -= OnSendFailed;
@@ -229,6 +235,12 @@ public sealed class ChatShellView : View
     }
 
     private void OnDialogOpened(DialogItem dialog) => _ = OpenDialogAsync(dialog);
+
+    private void OnShellError(string message) =>
+        Marshal(() => _statusBar.SetContext(string.IsNullOrWhiteSpace(message) ? "error" : message));
+
+    private void OnChatMarkedRead(ChatId chatId) =>
+        Marshal(() => _dialogVm.ClearUnread(chatId));
 
     private async Task OpenDialogAsync(DialogItem dialog)
     {

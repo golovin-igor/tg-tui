@@ -144,6 +144,36 @@ public sealed class FakeMessageService : IMessageService
         return Task.CompletedTask;
     }
 
+    public Task MarkReadAsync(ChatId chatId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var list = GetOrCreate(chatId);
+        lock (list)
+        {
+            for (var i = 0; i < list.Count; i++)
+            {
+                var old = list[i];
+                if (old.IsOutgoing && !old.IsRead)
+                {
+                    list[i] = new ChatMessage
+                    {
+                        Id = old.Id,
+                        ChatId = old.ChatId,
+                        Text = old.Text,
+                        IsOutgoing = old.IsOutgoing,
+                        SentAt = old.SentAt,
+                        IsEdited = old.IsEdited,
+                        ReplyToId = old.ReplyToId,
+                        Media = old.Media,
+                        IsRead = true,
+                    };
+                }
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
     private List<ChatMessage> GetOrCreate(ChatId chatId) =>
         _byChat.GetOrAdd(chatId.Value, _ => []);
 

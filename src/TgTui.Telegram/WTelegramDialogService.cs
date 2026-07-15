@@ -40,7 +40,9 @@ public sealed class WTelegramDialogService : IDialogService
 
             var peerInfo = dialogs.UserOrChat(dialog);
             var top = TelegramMapper.ResolveTopMessage(dialog, topByPeer, dialogs.messages);
-            items.Add(TelegramMapper.MapDialog(dialog, peerInfo, top, selfId));
+            var item = TelegramMapper.MapDialog(dialog, peerInfo, top, selfId);
+            _peers.SetReadMarkers(item.Id, dialog.read_inbox_max_id, dialog.read_outbox_max_id);
+            items.Add(item);
         }
 
         return TelegramMapper.SortDialogs(items);

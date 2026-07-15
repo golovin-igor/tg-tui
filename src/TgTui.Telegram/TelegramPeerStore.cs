@@ -12,6 +12,7 @@ namespace TgTui.Telegram;
 public sealed class TelegramPeerStore
 {
     private readonly ConcurrentDictionary<long, InputPeer> _peers = new();
+    private readonly ConcurrentDictionary<long, (int InboxMaxId, int OutboxMaxId)> _readMarkers = new();
 
     public void Merge(IDictionary<long, User>? users, IDictionary<long, ChatBase>? chats)
     {
@@ -88,6 +89,23 @@ public sealed class TelegramPeerStore
     {
         ArgumentNullException.ThrowIfNull(peer);
         _peers[chatId.Value] = peer;
+    }
+
+    public void SetReadMarkers(ChatId chatId, int readInboxMaxId, int readOutboxMaxId) =>
+        _readMarkers[chatId.Value] = (readInboxMaxId, readOutboxMaxId);
+
+    public bool TryGetReadMarkers(ChatId chatId, out int readInboxMaxId, out int readOutboxMaxId)
+    {
+        if (_readMarkers.TryGetValue(chatId.Value, out var markers))
+        {
+            readInboxMaxId = markers.InboxMaxId;
+            readOutboxMaxId = markers.OutboxMaxId;
+            return true;
+        }
+
+        readInboxMaxId = 0;
+        readOutboxMaxId = 0;
+        return false;
     }
 
     public bool TryGet(ChatId chatId, out InputPeer peer) =>

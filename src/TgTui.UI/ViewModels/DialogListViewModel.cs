@@ -79,6 +79,21 @@ public sealed class DialogListViewModel : IDisposable
         SelectedIndex = _selectedIndex + delta;
     }
 
+    /// <summary>Clears the unread badge for a dialog after mark-as-read (local optimistic).</summary>
+    public void ClearUnread(ChatId chatId)
+    {
+        for (var i = 0; i < _all.Count; i++)
+        {
+            if (_all[i].Id.Value != chatId.Value || _all[i].UnreadCount == 0)
+                continue;
+
+            _all[i] = Clone(_all[i], unreadCount: 0);
+            ApplyFilter(preserveSelection: true);
+            RaiseChanged();
+            return;
+        }
+    }
+
     public async Task ToggleMuteAsync(CancellationToken cancellationToken = default)
     {
         var item = Selected;
@@ -112,14 +127,18 @@ public sealed class DialogListViewModel : IDisposable
         RaiseChanged();
     }
 
-    private static DialogItem Clone(DialogItem item, bool? isMuted = null, bool? isPinned = null) =>
+    private static DialogItem Clone(
+        DialogItem item,
+        bool? isMuted = null,
+        bool? isPinned = null,
+        int? unreadCount = null) =>
         new()
         {
             Id = item.Id,
             Title = item.Title,
             LastMessagePreview = item.LastMessagePreview,
             LastMessageAt = item.LastMessageAt,
-            UnreadCount = item.UnreadCount,
+            UnreadCount = unreadCount ?? item.UnreadCount,
             IsPinned = isPinned ?? item.IsPinned,
             IsMuted = isMuted ?? item.IsMuted,
             AvatarLetter = item.AvatarLetter,

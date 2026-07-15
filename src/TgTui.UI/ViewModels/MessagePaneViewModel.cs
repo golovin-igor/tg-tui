@@ -41,6 +41,9 @@ public sealed class MessagePaneViewModel : IDisposable
 
     public event Action? Changed;
 
+    /// <summary>Raised after a successful open that marked the chat as read (chat id).</summary>
+    public event Action<ChatId>? ChatMarkedRead;
+
     public ChatId? ChatId { get; private set; }
 
     public string ChatTitle { get; private set; } = "";
@@ -87,6 +90,16 @@ public sealed class MessagePaneViewModel : IDisposable
         ReplyToId = null;
         _hasMoreHistory = true;
         await ReloadAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            await _messages.MarkReadAsync(dialog.Id, cancellationToken).ConfigureAwait(false);
+            ChatMarkedRead?.Invoke(dialog.Id);
+        }
+        catch
+        {
+            // Opening the chat still succeeds if mark-read fails (offline / permission).
+        }
     }
 
     public async Task ReloadAsync(CancellationToken cancellationToken = default)
