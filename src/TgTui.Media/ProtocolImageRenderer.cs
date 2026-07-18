@@ -112,11 +112,10 @@ public static class ProtocolImageRenderer
     }
 
     /// <summary>
-    /// TODO: implement a real Sixel encoder for terminals without Kitty/iTerm2.
-    /// Until then, fall back to half-block so previews still render.
+    /// DEC sixel graphics (DCS q). Uses a palette pass encoder for broad terminal support.
     /// </summary>
     private static string RenderSixel(string path, int maxCellWidth) =>
-        HalfBlockImageRenderer.RenderFile(path, maxCellWidth);
+        SixelImageRenderer.RenderFile(path, maxCellWidth);
 
     private static byte[] LoadAsPngBytes(string path)
     {
