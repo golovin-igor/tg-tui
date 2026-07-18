@@ -48,7 +48,8 @@ public sealed class WTelegramMediaDownloader : IMediaDownloader
         {
             case MessageMediaPhoto { photo: Photo photo }:
             {
-                var path = Path.Combine(_cacheDirectory, baseName + ".jpg");
+                // Match MediaCache key layout ({chatId}_{messageId}) to avoid duplicate files.
+                var path = Path.Combine(_cacheDirectory, baseName);
                 await using (var fs = File.Create(path))
                 {
                     await client.DownloadFileAsync(photo, fs).ConfigureAwait(false);
@@ -58,8 +59,7 @@ public sealed class WTelegramMediaDownloader : IMediaDownloader
 
             case MessageMediaDocument { document: Document doc }:
             {
-                var ext = ExtensionFor(doc);
-                var path = Path.Combine(_cacheDirectory, baseName + ext);
+                var path = Path.Combine(_cacheDirectory, baseName);
                 await using (var fs = File.Create(path))
                 {
                     await client.DownloadFileAsync(doc, fs).ConfigureAwait(false);
@@ -72,22 +72,4 @@ public sealed class WTelegramMediaDownloader : IMediaDownloader
         }
     }
 
-    private static string ExtensionFor(Document doc)
-    {
-        var fromName = Path.GetExtension(doc.Filename ?? string.Empty);
-        if (!string.IsNullOrEmpty(fromName))
-            return fromName;
-
-        return doc.mime_type switch
-        {
-            "image/png" => ".png",
-            "image/jpeg" or "image/jpg" => ".jpg",
-            "image/webp" => ".webp",
-            "image/gif" => ".gif",
-            "video/mp4" => ".mp4",
-            "audio/ogg" => ".ogg",
-            "application/pdf" => ".pdf",
-            _ => ".bin"
-        };
-    }
 }

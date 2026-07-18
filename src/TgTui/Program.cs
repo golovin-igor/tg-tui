@@ -1,9 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using TgTui.Core.Config;
 using TgTui.Core.Drafts;
 using TgTui.Core.Paths;
 using TgTui.Core.Ports;
+using TgTui.Logging;
 using TgTui.Media;
 using TgTui.Telegram;
 using TgTui.UI;
@@ -16,7 +18,10 @@ var useFake = string.Equals(
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddSingleton(AppPaths.ForCurrentUser());
+var appPaths = AppPaths.ForCurrentUser();
+appPaths.EnsureCreated();
+
+builder.Services.AddSingleton(appPaths);
 builder.Services.AddSingleton<ConfigStore>();
 builder.Services.AddSingleton<IDraftStore>(sp =>
     new FileDraftStore(sp.GetRequiredService<AppPaths>().DraftsFile));
@@ -62,10 +67,14 @@ else
             sp.GetRequiredService<IMediaDownloader>()));
 }
 
+builder.Logging.ClearProviders();
+builder.Logging.SetMinimumLevel(LogLevel.Information);
+builder.Logging.AddConsole();
+builder.Logging.AddProvider(new FileLoggerProvider(appPaths.LogsDir));
+
 using var host = builder.Build();
 
-var paths = host.Services.GetRequiredService<AppPaths>();
-paths.EnsureCreated();
+var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("TgTui");
 
 var shell = new ChatShellDependencies(
     Dialogs: host.Services.GetRequiredService<IDialogService>(),
@@ -74,12 +83,24 @@ var shell = new ChatShellDependencies(
     Media: host.Services.GetRequiredService<IMediaService>(),
     Updates: host.Services.GetRequiredService<IUpdateHub>());
 
-if (useFake)
+try
 {
-    AppRunner.Run(shell, authService: null, skipAuth: true);
+    if (useFake)
+    {
+        AppRunner.Run(shell, authService: null, skipAuth: true, logger: logger);
+    }
+    else
+    {
+        var auth = host.Services.GetRequiredService<IAuthService>();
+        AppRunner.Run(shell, auth, skipAuth: false, logger: logger);
+    }
 }
-else
+catch (Exception ex)
 {
-    var auth = host.Services.GetRequiredService<IAuthService>();
-    AppRunner.Run(shell, auth, skipAuth: false);
+    logger.LogCritical(ex, "Unhandled error in tg-tui");
+    throw;
+}
+finally
+{
+    logger.LogInformation("tg-tui shutting down");
 }

@@ -20,6 +20,7 @@ public sealed class ComposerView : View
     private readonly Label _hint;
     private bool _disposed;
     private bool _syncingText;
+    private CancellationTokenSource? _persistCts;
 
     public ComposerView(IApplication app, ComposerViewModel viewModel)
     {
@@ -78,12 +79,17 @@ public sealed class ComposerView : View
 
     public void FocusInput() => _text.SetFocus();
 
+    /// <summary>Copies the live text field into the view model (e.g. before draft flush on quit).</summary>
+    public void SyncTextToViewModel() => _vm.Text = _text.Text ?? "";
+
     /// <inheritdoc />
     protected override void Dispose(bool disposing)
     {
         if (disposing && !_disposed)
         {
             _disposed = true;
+            _persistCts?.Cancel();
+            _persistCts?.Dispose();
             _vm.Changed -= OnViewModelChanged;
             _text.ContentsChanged -= OnContentsChanged;
             _text.KeyDown -= OnTextKeyDown;
@@ -123,7 +129,16 @@ public sealed class ComposerView : View
 
         _ = e;
         _vm.Text = _text.Text ?? "";
-        _ = PersistDebouncedAsync();
+        SchedulePersist();
+    }
+
+    private void SchedulePersist()
+    {
+        _persistCts?.Cancel();
+        _persistCts?.Dispose();
+        _persistCts = new CancellationTokenSource();
+        var token = _persistCts.Token;
+        _ = PersistDebouncedAsync(token);
     }
 
     private void OnTextKeyDown(object? sender, Key key)
@@ -196,14 +211,19 @@ public sealed class ComposerView : View
         LeaveRequested?.Invoke();
     }
 
-    private async Task PersistDebouncedAsync()
+    private async Task PersistDebouncedAsync(CancellationToken cancellationToken)
     {
         try
         {
-            await Task.Delay(400).ConfigureAwait(true);
-            if (_disposed)
+            await Task.Delay(400, cancellationToken).ConfigureAwait(true);
+            if (_disposed || cancellationToken.IsCancellationRequested)
                 return;
-            await _vm.PersistDraftAsync().ConfigureAwait(true);
+
+            await _vm.PersistDraftAsync(cancellationToken).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer keystroke.
         }
         catch
         {

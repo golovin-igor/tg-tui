@@ -41,12 +41,16 @@ public sealed class MediaService : IMediaService
         if (_downloader is null)
             return null;
 
+        var cachePath = _cache.GetPath(cacheKey);
         var downloaded = await _downloader
             .DownloadMessageMediaAsync(chatId, messageId, cancellationToken)
             .ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(downloaded) || !File.Exists(downloaded))
             return null;
+
+        if (PathsEqual(downloaded, cachePath))
+            return cachePath;
 
         await using (var stream = File.OpenRead(downloaded))
             _cache.Put(cacheKey, stream);
@@ -125,6 +129,12 @@ public sealed class MediaService : IMediaService
 
     internal static string CacheKey(ChatId chatId, MessageId messageId) =>
         $"{chatId.Value}_{messageId.Value}";
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(
+            Path.GetFullPath(left),
+            Path.GetFullPath(right),
+            StringComparison.OrdinalIgnoreCase);
 
     private static GraphicsCapability DetectFromEnvironment()
     {

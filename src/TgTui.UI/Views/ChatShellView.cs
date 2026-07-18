@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
@@ -15,6 +16,7 @@ public sealed class ChatShellView : View
 {
     private readonly IApplication _app;
     private readonly ChatShellDependencies _deps;
+    private readonly ILogger? _logger;
     private readonly DialogListViewModel _dialogVm;
     private readonly MessagePaneViewModel _messageVm;
     private readonly ComposerViewModel _composerVm;
@@ -30,10 +32,11 @@ public sealed class ChatShellView : View
     private bool _disposed;
     private bool _started;
 
-    public ChatShellView(IApplication app, ChatShellDependencies dependencies)
+    public ChatShellView(IApplication app, ChatShellDependencies dependencies, ILogger? logger = null)
     {
         _app = app ?? throw new ArgumentNullException(nameof(app));
         _deps = dependencies ?? throw new ArgumentNullException(nameof(dependencies));
+        _logger = logger;
 
         Width = Dim.Fill();
         Height = Dim.Fill();
@@ -42,6 +45,7 @@ public sealed class ChatShellView : View
         _dialogVm = new DialogListViewModel(_deps.Dialogs, _deps.Updates);
         _messageVm = new MessagePaneViewModel(_deps.Messages, _deps.Media, _deps.Updates);
         _composerVm = new ComposerViewModel(_deps.Messages, _deps.Drafts);
+        _composerVm.SetReplyPreviewResolver(_messageVm.GetReplySnippet);
 
         _statusBar = new StatusBarView(_app, _deps.Updates)
         {
@@ -155,8 +159,9 @@ public sealed class ChatShellView : View
         {
             await _deps.Drafts.LoadAsync(cancellationToken).ConfigureAwait(true);
         }
-        catch
+        catch (Exception ex)
         {
+            _logger?.LogWarning(ex, "Failed to load drafts");
             // empty drafts on load failure
         }
 
@@ -164,8 +169,9 @@ public sealed class ChatShellView : View
         {
             await _deps.Updates.StartAsync(cancellationToken).ConfigureAwait(true);
         }
-        catch
+        catch (Exception ex)
         {
+            _logger?.LogWarning(ex, "Update hub failed to start");
             // hub may be unavailable in offline/fake mode
         }
 
@@ -175,10 +181,33 @@ public sealed class ChatShellView : View
         }
         catch (Exception ex)
         {
+            _logger?.LogWarning(ex, "Failed to load dialogs");
             Marshal(() => _statusBar.SetContext($"dialogs error: {ex.Message}"));
         }
 
         Marshal(() => SetFocusZone(FocusZone.Dialogs));
+    }
+
+    /// <summary>Returns <c>false</c> when the user cancels quit from the confirmation dialog.</summary>
+    public bool TryConfirmQuit(IApplication app)
+    {
+        if (!_composerVm.NeedsQuitConfirmation)
+            return true;
+
+        var message = _composerVm.EditMessageId is not null
+            ? "You are editing a message. Quit without applying?"
+            : _composerVm.ReplyToId is not null
+                ? "You have an unsent reply in the composer. Quit anyway?"
+                : "You have unsent text in the composer. Quit anyway?";
+
+        return QuitConfirmDialog.Confirm(app, message);
+    }
+
+    /// <summary>Persists the open chat draft before exit.</summary>
+    public async Task FlushDraftAsync(CancellationToken cancellationToken = default)
+    {
+        _composer.SyncTextToViewModel();
+        await _composerVm.PersistDraftAsync(cancellationToken).ConfigureAwait(true);
     }
 
     /// <inheritdoc />
@@ -258,6 +287,7 @@ public sealed class ChatShellView : View
         }
         catch (Exception ex)
         {
+            _logger?.LogWarning(ex, "Failed to open chat {ChatId}", dialog.Id.Value);
             Marshal(() => _statusBar.SetContext($"open chat: {ex.Message}"));
         }
     }

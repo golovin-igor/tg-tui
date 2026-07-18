@@ -78,6 +78,68 @@ public sealed class MessagePaneViewModel : IDisposable
     /// <summary>Reply target set by message-pane <c>r</c>; composer reads/clears this.</summary>
     public MessageId? ReplyToId { get; set; }
 
+    /// <summary>One-line snippet of a message for reply quotes (null when not in the open chat).</summary>
+    public string? GetReplySnippet(MessageId replyToId)
+    {
+        var msg = _items.FirstOrDefault(m => m.Id.Value == replyToId.Value);
+        return msg is null ? null : FormatReplySnippet(msg);
+    }
+
+    /// <summary>Builds multi-line detail text for the expanded message dialog.</summary>
+    public async Task<string> BuildDetailContentAsync(
+        ChatMessage message,
+        int maxCellWidth,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        var sb = new System.Text.StringBuilder();
+        var time = message.SentAt.ToLocalTime().ToString("g");
+        var direction = message.IsOutgoing ? "Outgoing" : "Incoming";
+        var edited = message.IsEdited ? " · edited" : "";
+        var pending = message.Id.Value < 0 ? " · sending…" : "";
+        sb.AppendLine($"{direction} · {time}{edited}{pending}");
+
+        if (message.ReplyToId is { } replyId)
+        {
+            var quote = GetReplySnippet(replyId);
+            sb.AppendLine(quote is not null ? $"↩ {quote}" : $"↩ message #{replyId.Value}");
+        }
+
+        sb.AppendLine(new string('─', Math.Min(48, Math.Max(16, maxCellWidth))));
+
+        if (!string.IsNullOrWhiteSpace(message.Text))
+        {
+            sb.AppendLine(message.Text);
+            sb.AppendLine();
+        }
+
+        if (message.Media is { } media)
+        {
+            if (IsInlinePreviewable(media))
+            {
+                var preview = await LoadExpandedMediaPreviewAsync(media, maxCellWidth, cancellationToken)
+                    .ConfigureAwait(false);
+                sb.AppendLine(string.IsNullOrWhiteSpace(preview)
+                    ? MediaUnavailablePlaceholder
+                    : preview);
+            }
+            else
+            {
+                var label = string.IsNullOrWhiteSpace(media.FileName)
+                    ? $"[{media.Kind}]"
+                    : $"[{media.Kind}] {media.FileName}";
+                sb.AppendLine(label);
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("o · open attachment externally");
+        }
+
+        sb.Append("Esc · close");
+        return sb.ToString().TrimEnd();
+    }
+
     public string? GetMediaPreview(MessageId messageId) =>
         _mediaPreviews.TryGetValue(messageId.Value, out var p) ? p : null;
 
@@ -102,7 +164,12 @@ public sealed class MessagePaneViewModel : IDisposable
         }
     }
 
-    public async Task ReloadAsync(CancellationToken cancellationToken = default)
+    /// <param name="preserveScrollPosition">
+    /// When <c>true</c>, keep the selected message after reload unless the user was already at the latest.
+    /// </param>
+    public async Task ReloadAsync(
+        CancellationToken cancellationToken = default,
+        bool preserveScrollPosition = false)
     {
         if (ChatId is not { } chatId)
         {
@@ -114,6 +181,9 @@ public sealed class MessagePaneViewModel : IDisposable
             RaiseChanged();
             return;
         }
+
+        var anchorId = preserveScrollPosition ? Selected?.Id : null;
+        var wasAtLatest = preserveScrollPosition && IsAtLatest();
 
         _loadCts?.Cancel();
         _loadCts?.Dispose();
@@ -146,7 +216,17 @@ public sealed class MessagePaneViewModel : IDisposable
         _mediaPreviews.Clear();
         _mediaPreviewInFlight.Clear();
         _hasMoreHistory = history.Count >= DefaultHistoryLimit;
-        JumpToLatest(raise: false);
+
+        if (preserveScrollPosition && !wasAtLatest && anchorId is { } id)
+        {
+            var idx = _items.FindIndex(m => m.Id.Value == id.Value);
+            _selectedIndex = idx >= 0 ? idx : ClampIndex(_selectedIndex);
+        }
+        else
+        {
+            JumpToLatest(raise: false);
+        }
+
         RaiseChanged();
         _ = EnsureMediaPreviewAsync(Selected);
     }
@@ -381,7 +461,9 @@ public sealed class MessagePaneViewModel : IDisposable
             ? (pending ? " …" : (message.IsRead ? " ✓✓" : " ✓"))
             : "";
         var edited = message.IsEdited ? " (edited)" : "";
-        var reply = message.ReplyToId is { } r ? $"↩ {r.Value} " : "";
+        var reply = message.ReplyToId is { } replyId
+            ? FormatReplyPrefix(replyId)
+            : "";
         var body = string.IsNullOrWhiteSpace(message.Text)
             ? (message.Media is not null ? $"[{message.Media.Kind}]" : "")
             : message.Text.Replace('\n', ' ');
@@ -439,13 +521,16 @@ public sealed class MessagePaneViewModel : IDisposable
     {
         try
         {
-            await ReloadAsync().ConfigureAwait(false);
+            await ReloadAsync(preserveScrollPosition: true).ConfigureAwait(false);
         }
         catch
         {
             // ignore hub-driven failures
         }
     }
+
+    private bool IsAtLatest() =>
+        _items.Count == 0 || _selectedIndex >= _items.Count - 1;
 
     private async Task EnsureMediaPreviewAsync(ChatMessage? message)
     {
@@ -518,6 +603,62 @@ public sealed class MessagePaneViewModel : IDisposable
         {
             _mediaPreviewInFlight.Remove(messageId);
         }
+    }
+
+    private async Task<string?> LoadExpandedMediaPreviewAsync(
+        MediaAttachment media,
+        int maxCellWidth,
+        CancellationToken cancellationToken)
+    {
+        var local = await ResolveLocalMediaPathAsync(media, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(local))
+            return null;
+
+        try
+        {
+            return _media.RenderPreview(local, maxCellWidth);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task<string?> ResolveLocalMediaPathAsync(
+        MediaAttachment media,
+        CancellationToken cancellationToken)
+    {
+        var local = media.LocalPath;
+        if (string.IsNullOrWhiteSpace(local) || !File.Exists(local))
+            local = await _media.EnsureLocalAsync(media, cancellationToken).ConfigureAwait(false);
+        return local;
+    }
+
+    private string FormatReplyPrefix(MessageId replyToId)
+    {
+        var snippet = GetReplySnippet(replyToId);
+        if (string.IsNullOrWhiteSpace(snippet))
+            return $"↩ #{replyToId.Value} ";
+
+        var oneLine = OneLine(snippet);
+        if (oneLine.Length > 28)
+            oneLine = oneLine[..27] + "…";
+        return $"↩ {oneLine} ";
+    }
+
+    private static string FormatReplySnippet(ChatMessage message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.Text))
+            return message.Text.Replace('\n', ' ').Trim();
+
+        if (message.Media is { } media)
+        {
+            if (!string.IsNullOrWhiteSpace(media.FileName))
+                return $"[{media.Kind}] {media.FileName}";
+            return $"[{media.Kind}]";
+        }
+
+        return "(message)";
     }
 
     private static bool IsInlinePreviewable(MediaAttachment media)

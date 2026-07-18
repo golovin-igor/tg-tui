@@ -54,6 +54,70 @@ public sealed class MessagePaneViewModelTests
     }
 
     [Fact]
+    public async Task ReloadAsync_preserves_selection_when_not_at_latest()
+    {
+        var messages = new FakeMessageService();
+        using var vm = new MessagePaneViewModel(messages, new FakeMediaService());
+        await vm.OpenChatAsync(Alice());
+        vm.SelectedIndex = 5;
+        var selectedId = vm.Selected!.Id;
+
+        await vm.ReloadAsync(preserveScrollPosition: true);
+
+        vm.Selected!.Id.Should().Be(selectedId);
+        vm.SelectedIndex.Should().Be(5);
+    }
+
+    [Fact]
+    public async Task ReloadAsync_jumps_to_latest_when_already_at_bottom()
+    {
+        var messages = new FakeMessageService();
+        using var vm = new MessagePaneViewModel(messages, new FakeMediaService());
+        await vm.OpenChatAsync(Alice());
+        vm.SelectedIndex.Should().Be(vm.Messages.Count - 1);
+
+        await vm.ReloadAsync(preserveScrollPosition: true);
+
+        vm.SelectedIndex.Should().Be(vm.Messages.Count - 1);
+    }
+
+    [Fact]
+    public async Task FormatRow_shows_reply_snippet_instead_of_raw_id()
+    {
+        var messages = new FakeMessageService();
+        using var vm = new MessagePaneViewModel(messages, new FakeMediaService());
+        await vm.OpenChatAsync(Alice());
+
+        var replyTarget = vm.Messages[^1];
+        vm.PresentOptimistic(new ChatMessage
+        {
+            Id = new MessageId(-3),
+            ChatId = new ChatId(1),
+            Text = "sure thing",
+            IsOutgoing = true,
+            SentAt = DateTimeOffset.Now,
+            ReplyToId = replyTarget.Id,
+        });
+
+        var row = vm.FormatRow(vm.Messages[^1], 120);
+        row.Should().Contain("↩");
+        row.Should().NotContain($"↩ {replyTarget.Id.Value}");
+        row.Should().Contain(replyTarget.Text.Replace('\n', ' '));
+    }
+
+    [Fact]
+    public async Task GetReplySnippet_returns_text_or_media_label()
+    {
+        var messages = new FakeMessageService();
+        using var vm = new MessagePaneViewModel(messages, new FakeMediaService());
+        await vm.OpenChatAsync(Alice());
+
+        var target = vm.Messages[^1];
+        vm.GetReplySnippet(target.Id).Should().Be(target.Text.Replace('\n', ' ').Trim());
+        vm.GetReplySnippet(new MessageId(99999)).Should().BeNull();
+    }
+
+    [Fact]
     public async Task PresentOptimistic_then_Confirm_replaces_temp_row()
     {
         var messages = new FakeMessageService();

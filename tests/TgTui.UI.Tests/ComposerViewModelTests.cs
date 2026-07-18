@@ -9,6 +9,43 @@ namespace TgTui.UI.Tests;
 public sealed class ComposerViewModelTests
 {
     [Fact]
+    public async Task StatusHint_shows_reply_snippet_when_resolver_set()
+    {
+        var messages = new FakeMessageService();
+        var drafts = new FileDraftStore(Path.Combine(Path.GetTempPath(), $"tg-tui-drafts-{Guid.NewGuid():N}.json"));
+        var composer = new ComposerViewModel(messages, drafts);
+        composer.SetReplyPreviewResolver(_ => "original question here");
+
+        await composer.BindChatAsync(new ChatId(1));
+        composer.SetReply(new MessageId(80));
+
+        composer.StatusHint.Should().Contain("original question here");
+        composer.StatusHint.Should().NotContain("#80");
+    }
+
+    [Fact]
+    public async Task NeedsQuitConfirmation_true_for_unsent_text_reply_or_edit()
+    {
+        var messages = new FakeMessageService();
+        var drafts = new FileDraftStore(Path.Combine(Path.GetTempPath(), $"tg-tui-drafts-{Guid.NewGuid():N}.json"));
+        var composer = new ComposerViewModel(messages, drafts);
+
+        composer.NeedsQuitConfirmation.Should().BeFalse();
+
+        await composer.BindChatAsync(new ChatId(1));
+        composer.Text = "draft";
+        composer.NeedsQuitConfirmation.Should().BeTrue();
+
+        composer.Text = "";
+        composer.SetReply(new MessageId(10));
+        composer.NeedsQuitConfirmation.Should().BeTrue();
+
+        composer.CancelReplyOrEdit();
+        composer.BeginEdit(new MessageId(20), "edit me");
+        composer.NeedsQuitConfirmation.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Submit_send_presents_optimistic_then_confirms_with_replyTo()
     {
         var messages = new FakeMessageService();

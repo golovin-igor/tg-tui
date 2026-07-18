@@ -16,6 +16,7 @@ public sealed class ComposerViewModel
     private string _text = "";
     private MessageId? _replyToId;
     private MessageId? _editMessageId;
+    private Func<MessageId, string?>? _replyPreviewResolver;
 
     public ComposerViewModel(IMessageService messages, IDraftStore drafts)
     {
@@ -56,6 +57,17 @@ public sealed class ComposerViewModel
 
     public MessageId? EditMessageId => _editMessageId;
 
+    /// <summary>True when quitting would discard composer state the user may care about.</summary>
+    public bool NeedsQuitConfirmation =>
+        _chatId is not null
+        && (_editMessageId is not null
+            || _replyToId is not null
+            || !string.IsNullOrWhiteSpace(_text));
+
+    /// <summary>Resolves one-line reply quotes from the open message history.</summary>
+    public void SetReplyPreviewResolver(Func<MessageId, string?>? resolver) =>
+        _replyPreviewResolver = resolver;
+
     public string StatusHint
     {
         get
@@ -65,7 +77,7 @@ public sealed class ComposerViewModel
             if (_editMessageId is { } e)
                 return $"Editing #{e.Value} · Enter apply · Esc cancel · Shift+Enter newline";
             if (_replyToId is { } r)
-                return $"Reply to #{r.Value} · Enter send · Esc cancel · Shift+Enter newline";
+                return $"Reply to {FormatReplyTarget(r)} · Enter send · Esc cancel · Shift+Enter newline";
             return "Enter send · Esc leave · Shift+Enter newline · draft auto-saved";
         }
     }
@@ -225,4 +237,16 @@ public sealed class ComposerViewModel
     }
 
     private void RaiseChanged() => Changed?.Invoke();
+
+    private string FormatReplyTarget(MessageId replyToId)
+    {
+        var snippet = _replyPreviewResolver?.Invoke(replyToId);
+        if (string.IsNullOrWhiteSpace(snippet))
+            return $"#{replyToId.Value}";
+
+        snippet = snippet.Replace('\n', ' ').Trim();
+        if (snippet.Length > 36)
+            snippet = snippet[..35] + "…";
+        return $"\"{snippet}\"";
+    }
 }

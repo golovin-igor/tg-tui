@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Input;
@@ -15,6 +16,8 @@ namespace TgTui.UI;
 /// </summary>
 public static class AppRunner
 {
+    private static ChatShellView? _activeShell;
+
     /// <summary>
     /// Runs the TUI. When <paramref name="skipAuth"/> is true (offline fake mode),
     /// the chat shell is shown immediately.
@@ -22,7 +25,8 @@ public static class AppRunner
     public static void Run(
         ChatShellDependencies shellDependencies,
         IAuthService? authService = null,
-        bool skipAuth = false)
+        bool skipAuth = false,
+        ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(shellDependencies);
 
@@ -30,12 +34,16 @@ public static class AppRunner
         app.Init();
         TelegramDesktopTheme.Apply();
 
-        using var window = CreateMainWindow(app, shellDependencies, authService, skipAuth);
+        using var window = CreateMainWindow(app, shellDependencies, authService, skipAuth, logger);
         app.Run(window);
     }
 
     /// <summary>Backward-compatible entry used by older call sites / tests.</summary>
-    public static void Run(IAuthService authService, IUpdateHub? updateHub = null)
+    public static void Run(IAuthService authService, IUpdateHub? updateHub = null) =>
+        Run(authService, updateHub, logger: null);
+
+    /// <summary>Backward-compatible entry used by older call sites / tests.</summary>
+    public static void Run(IAuthService authService, IUpdateHub? updateHub, ILogger? logger)
     {
         ArgumentNullException.ThrowIfNull(authService);
         // Minimal shell deps when only auth is provided (placeholder path no longer used).
@@ -46,14 +54,15 @@ public static class AppRunner
             Drafts: drafts,
             Media: new Fakes.FakeMediaService(),
             Updates: updateHub ?? new Fakes.FakeUpdateHub());
-        Run(shell, authService, skipAuth: false);
+        Run(shell, authService, skipAuth: false, logger: logger);
     }
 
     private static Window CreateMainWindow(
         IApplication app,
         ChatShellDependencies shellDependencies,
         IAuthService? authService,
-        bool skipAuth)
+        bool skipAuth,
+        ILogger? logger)
     {
         var window = new Window
         {
@@ -62,11 +71,11 @@ public static class AppRunner
             SchemeName = Schemes.Base.ToString(),
         };
 
-        AttachGlobalKeys(app, window);
+        AttachGlobalKeys(app, window, logger);
 
         if (skipAuth || authService is null)
         {
-            ShowChatShell(window, app, shellDependencies);
+            ShowChatShell(window, app, shellDependencies, logger);
             return window;
         }
 
@@ -74,7 +83,7 @@ public static class AppRunner
         wizard = new AuthWizardView(
             authService,
             app,
-            onReady: () => ShowChatShell(window, app, shellDependencies, wizard),
+            onReady: () => ShowChatShell(window, app, shellDependencies, logger, wizard),
             hub: shellDependencies.Updates);
 
         window.Add(wizard);
@@ -92,6 +101,7 @@ public static class AppRunner
         Window window,
         IApplication app,
         ChatShellDependencies shellDependencies,
+        ILogger? logger,
         View? wizard = null)
     {
         if (wizard is not null)
@@ -108,13 +118,15 @@ public static class AppRunner
             child.Dispose();
         }
 
-        var shell = new ChatShellView(app, shellDependencies)
+        var shell = new ChatShellView(app, shellDependencies, logger)
         {
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
             Height = Dim.Fill(),
         };
+
+        _activeShell = shell;
 
         window.Title = "tg-tui";
         window.Add(shell);
@@ -126,7 +138,7 @@ public static class AppRunner
         });
     }
 
-    private static void AttachGlobalKeys(IApplication app, Window window)
+    private static void AttachGlobalKeys(IApplication app, Window window, ILogger? logger)
     {
         window.KeyDown += (_, key) =>
         {
@@ -146,10 +158,31 @@ public static class AppRunner
 
             if (IsQuitKey(key))
             {
-                app.RequestStop();
                 key.Handled = true;
+                _ = TryQuitAsync(app, logger);
             }
         };
+    }
+
+    private static async Task TryQuitAsync(IApplication app, ILogger? logger)
+    {
+        try
+        {
+            if (_activeShell is not null)
+            {
+                if (!_activeShell.TryConfirmQuit(app))
+                    return;
+
+                await _activeShell.FlushDraftAsync().ConfigureAwait(true);
+            }
+
+            app.RequestStop();
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "Quit flow failed");
+            app.RequestStop();
+        }
     }
 
     private static bool IsHelpKey(Key key) =>

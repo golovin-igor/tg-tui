@@ -8,6 +8,37 @@ namespace TgTui.Media.Tests;
 public class MediaServiceDownloaderTests
 {
     [Fact]
+    public async Task EnsureLocalAsync_skips_copy_when_downloader_writes_cache_path()
+    {
+        var cacheRoot = Path.Combine(Path.GetTempPath(), "tg-tui-dl-cache-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var cache = new MediaCache(cacheRoot);
+            var cachePath = cache.GetPath("1_2");
+            var downloader = new CachePathDownloader(cachePath);
+            var service = new MediaService(cache, downloader);
+            var media = new MediaAttachment
+            {
+                Kind = "photo",
+                SourceChatId = new ChatId(1),
+                SourceMessageId = new MessageId(2)
+            };
+
+            var result = await service.EnsureLocalAsync(media);
+
+            result.Should().Be(cachePath);
+            File.Exists(cachePath).Should().BeTrue();
+            downloader.Calls.Should().Be(1);
+            Directory.GetFiles(cacheRoot).Should().ContainSingle();
+        }
+        finally
+        {
+            if (Directory.Exists(cacheRoot))
+                Directory.Delete(cacheRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task EnsureLocalAsync_uses_downloader_when_no_local_path()
     {
         var expected = Path.Combine(Path.GetTempPath(), "tg-tui-dl-" + Guid.NewGuid().ToString("N") + ".bin");
@@ -75,6 +106,26 @@ public class MediaServiceDownloaderTests
             CancellationToken cancellationToken = default)
         {
             Calls++;
+            return Task.FromResult(_path);
+        }
+    }
+
+    private sealed class CachePathDownloader : IMediaDownloader
+    {
+        private readonly string _path;
+
+        public CachePathDownloader(string path) => _path = path;
+
+        public int Calls { get; private set; }
+
+        public Task<string> DownloadMessageMediaAsync(
+            ChatId chatId,
+            MessageId messageId,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+            File.WriteAllText(_path, "cached");
             return Task.FromResult(_path);
         }
     }
