@@ -3,6 +3,7 @@ using Terminal.Gui.App;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 using Terminal.Gui.Views;
+using TgTui.Core.Models;
 using TgTui.UI.Theme;
 using TgTui.UI.ViewModels;
 using ValueChangedEventArgs = Terminal.Gui.App.ValueChangedEventArgs<int?>;
@@ -118,12 +119,29 @@ public sealed class MessagePaneView : View
 
     private void OnListAccepting(object? sender, CommandEventArgs e)
     {
-        // Enter: open media externally when the selected row has an attachment (design §3.4).
-        if (_vm.Selected?.Media is null)
+        if (_vm.Selected is not { } message)
             return;
 
         e.Handled = true;
-        _ = RunAsync(_vm.OpenSelectedMediaExternallyAsync);
+        _ = ShowDetailAsync(message);
+    }
+
+    private async Task ShowDetailAsync(ChatMessage message)
+    {
+        try
+        {
+            var width = Math.Max(40, Frame.Width - 4);
+            var content = await _vm.BuildDetailContentAsync(message, width).ConfigureAwait(true);
+            MessageDetailDialog.Show(
+                _app,
+                content,
+                message,
+                message.Media is not null ? _vm.OpenSelectedMediaExternallyAsync : null);
+        }
+        catch (Exception ex)
+        {
+            ErrorOccurred?.Invoke(ex.Message);
+        }
     }
 
     private void OnRowRender(object? sender, ListViewRowEventArgs e)

@@ -32,7 +32,7 @@ public static class KeyBindings
     public const string MessageOpenMedia = "o";
     public const string MessageOpenMediaAction = "Open media externally";
     public const string MessageExpand = "Enter";
-    public const string MessageExpandAction = "Expand / open media when on media message";
+    public const string MessageExpandAction = "Expand message / preview media";
     public const string MessageFocusComposer = "i / a";
     public const string MessageFocusComposerAction = "Focus composer";
     public const string MessageFocusDialogs = "g / h";

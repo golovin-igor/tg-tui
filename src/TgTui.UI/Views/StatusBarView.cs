@@ -16,6 +16,7 @@ public sealed class StatusBarView : View
     private readonly IUpdateHub? _hub;
     private readonly Label _label;
     private bool _disposed;
+    private bool _connectionKnown;
     private bool _isConnected;
     private string? _detail;
     private string _context = "";
@@ -52,6 +53,7 @@ public sealed class StatusBarView : View
 
     public void SetConnection(bool isConnected, string? detail = null)
     {
+        _connectionKnown = true;
         _isConnected = isConnected;
         _detail = detail;
         RefreshLabel();
@@ -95,8 +97,12 @@ public sealed class StatusBarView : View
 
     private string Format()
     {
-        var conn = _isConnected ? "online" : "offline";
-        if (!string.IsNullOrWhiteSpace(_detail))
+        var conn = !_connectionKnown
+            ? "connecting…"
+            : _isConnected
+                ? "online"
+                : "offline";
+        if (_connectionKnown && !string.IsNullOrWhiteSpace(_detail))
             conn = $"{conn} ({_detail})";
 
         var left = $" {conn}";
