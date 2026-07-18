@@ -56,15 +56,15 @@ public class ProtocolImageRendererTests
     }
 
     [Fact]
-    public void RenderFile_Sixel_does_not_throw()
+    public void RenderFile_Sixel_emits_dcs_sixel_sequence()
     {
         var path = Path.Combine(Path.GetTempPath(), "tg-tui-sixel-" + Guid.NewGuid().ToString("N") + ".png");
         try
         {
             File.WriteAllBytes(path, OneByOnePng);
-            var act = () => ProtocolImageRenderer.RenderFile(path, 12, GraphicsCapability.Sixel);
-            act.Should().NotThrow();
-            act().Should().NotBeNullOrWhiteSpace();
+            var result = ProtocolImageRenderer.RenderFile(path, 12, GraphicsCapability.Sixel);
+            result.Should().StartWith("\u001bPq");
+            result.Should().Contain("#0;2;");
         }
         finally
         {

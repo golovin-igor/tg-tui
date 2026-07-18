@@ -29,6 +29,9 @@ public sealed class MessagePaneViewModel : IDisposable
     private bool _hasMoreHistory = true;
     private bool _loadingOlder;
     private CancellationTokenSource? _loadCts;
+    private string _searchQuery = "";
+    private readonly List<int> _searchMatches = [];
+    private int _searchMatchCursor = -1;
 
     public MessagePaneViewModel(IMessageService messages, IMediaService media, IUpdateHub? hub = null)
     {
@@ -53,6 +56,24 @@ public sealed class MessagePaneViewModel : IDisposable
     public bool HasMoreHistory => _hasMoreHistory;
 
     public bool IsLoadingOlder => _loadingOlder;
+
+    public bool IsSearchActive => !string.IsNullOrWhiteSpace(_searchQuery);
+
+    public int SearchMatchCount => _searchMatches.Count;
+
+    public string SearchQuery
+    {
+        get => _searchQuery;
+        set
+        {
+            var next = value ?? "";
+            if (string.Equals(_searchQuery, next, StringComparison.Ordinal))
+                return;
+            _searchQuery = next;
+            RecomputeSearchMatches(selectFirst: true);
+            RaiseChanged();
+        }
+    }
 
     public int SelectedIndex
     {
@@ -150,6 +171,7 @@ public sealed class MessagePaneViewModel : IDisposable
         ChatId = dialog.Id;
         ChatTitle = dialog.Title;
         ReplyToId = null;
+        ClearSearch();
         _hasMoreHistory = true;
         await ReloadAsync(cancellationToken).ConfigureAwait(false);
 
@@ -393,6 +415,34 @@ public sealed class MessagePaneViewModel : IDisposable
             RaiseChanged();
     }
 
+    public void ClearSearch()
+    {
+        if (string.IsNullOrEmpty(_searchQuery) && _searchMatches.Count == 0)
+            return;
+
+        _searchQuery = "";
+        _searchMatches.Clear();
+        _searchMatchCursor = -1;
+        RaiseChanged();
+    }
+
+    /// <summary>Moves to the next (<paramref name="direction"/> = 1) or previous (-1) in-chat search match.</summary>
+    public bool MoveSearchMatch(int direction)
+    {
+        if (_searchMatches.Count == 0 || direction == 0)
+            return false;
+
+        if (_searchMatchCursor < 0)
+            _searchMatchCursor = direction > 0 ? 0 : _searchMatches.Count - 1;
+        else
+            _searchMatchCursor = (_searchMatchCursor + direction + _searchMatches.Count) % _searchMatches.Count;
+
+        _selectedIndex = _searchMatches[_searchMatchCursor];
+        RaiseChanged();
+        _ = EnsureMediaPreviewAsync(Selected);
+        return true;
+    }
+
     public void BeginReply()
     {
         var selected = Selected;
@@ -453,7 +503,7 @@ public sealed class MessagePaneViewModel : IDisposable
         }
     }
 
-    public string FormatRow(ChatMessage message, int maxWidth)
+    public string FormatRow(ChatMessage message, int maxWidth, int rowIndex = -1)
     {
         var time = message.SentAt.ToLocalTime().ToString("HH:mm");
         var pending = message.Id.Value < 0;
@@ -472,8 +522,12 @@ public sealed class MessagePaneViewModel : IDisposable
         if (!string.IsNullOrEmpty(preview))
             body = string.IsNullOrEmpty(body) ? preview : $"{body} · {OneLine(preview)}";
 
+        var searchMark = "";
+        if (IsSearchActive && rowIndex >= 0 && _searchMatches.Contains(rowIndex))
+            searchMark = _searchMatchCursor >= 0 && _searchMatches[_searchMatchCursor] == rowIndex ? "»" : "·";
+
         var align = message.IsOutgoing ? "→" : "←";
-        var line = $"{align} {time}{receipt}{edited} {reply}{body}";
+        var line = $"{searchMark}{align} {time}{receipt}{edited} {reply}{body}";
         if (maxWidth > 8 && line.Length > maxWidth)
             return line[..(maxWidth - 1)] + "…";
         return line;
@@ -514,7 +568,139 @@ public sealed class MessagePaneViewModel : IDisposable
     {
         if (ChatId is not { } id || e.ChatId.Value != id.Value)
             return;
-        _ = ReloadQuietAsync();
+
+        switch (e.Kind)
+        {
+            case MessageChangeKind.Refresh:
+                _ = ReloadQuietAsync();
+                break;
+            case MessageChangeKind.Added when e.Message is not null:
+                ApplyMessageAdded(e.Message);
+                break;
+            case MessageChangeKind.Edited when e.Message is not null:
+                ApplyMessageEdited(e.Message);
+                break;
+            case MessageChangeKind.Deleted:
+                ApplyMessagesDeleted(e.DeletedIds);
+                break;
+            case MessageChangeKind.ReadStateChanged:
+                ApplyReadStateChanged(e.ReadInboxMaxId, e.ReadOutboxMaxId);
+                break;
+            default:
+                _ = ReloadQuietAsync();
+                break;
+        }
+    }
+
+    private void ApplyMessageAdded(ChatMessage message)
+    {
+        var wasAtLatest = IsAtLatest();
+        var anchorId = wasAtLatest ? null : Selected?.Id;
+
+        UpsertById(message);
+        _items.Sort(static (a, b) => a.Id.Value.CompareTo(b.Id.Value));
+
+        if (wasAtLatest)
+            JumpToLatest(raise: false);
+        else if (anchorId is { } aid)
+        {
+            var idx = _items.FindIndex(m => m.Id.Value == aid.Value);
+            _selectedIndex = idx >= 0 ? idx : ClampIndex(_selectedIndex);
+        }
+
+        RecomputeSearchMatches(selectFirst: false);
+        RaiseChanged();
+        if (wasAtLatest)
+            _ = EnsureMediaPreviewAsync(Selected);
+    }
+
+    private void ApplyMessageEdited(ChatMessage message)
+    {
+        UpsertById(message);
+        _mediaPreviews.Remove(message.Id.Value);
+        RecomputeSearchMatches(selectFirst: false);
+        RaiseChanged();
+        _ = EnsureMediaPreviewAsync(Selected);
+    }
+
+    private void ApplyMessagesDeleted(IReadOnlyList<MessageId>? deletedIds)
+    {
+        if (deletedIds is null || deletedIds.Count == 0)
+            return;
+
+        var ids = new HashSet<long>(deletedIds.Select(static id => id.Value));
+        _items.RemoveAll(m => ids.Contains(m.Id.Value));
+        foreach (var id in ids)
+            _mediaPreviews.Remove(id);
+
+        _selectedIndex = ClampIndex(_selectedIndex);
+        RecomputeSearchMatches(selectFirst: false);
+        RaiseChanged();
+    }
+
+    private void ApplyReadStateChanged(int? readInboxMaxId, int? readOutboxMaxId)
+    {
+        if (readInboxMaxId is null && readOutboxMaxId is null)
+            return;
+
+        var changed = false;
+        for (var i = 0; i < _items.Count; i++)
+        {
+            var msg = _items[i];
+            var isRead = msg.IsOutgoing
+                ? readOutboxMaxId is int outMax && msg.Id.Value <= outMax
+                : readInboxMaxId is int inMax && msg.Id.Value <= inMax;
+            if (isRead == msg.IsRead)
+                continue;
+
+            _items[i] = new ChatMessage
+            {
+                Id = msg.Id,
+                ChatId = msg.ChatId,
+                Text = msg.Text,
+                IsOutgoing = msg.IsOutgoing,
+                SentAt = msg.SentAt,
+                IsEdited = msg.IsEdited,
+                ReplyToId = msg.ReplyToId,
+                Media = msg.Media,
+                IsRead = isRead,
+            };
+            changed = true;
+        }
+
+        if (changed)
+            RaiseChanged();
+    }
+
+    private void RecomputeSearchMatches(bool selectFirst)
+    {
+        _searchMatches.Clear();
+        _searchMatchCursor = -1;
+        if (string.IsNullOrWhiteSpace(_searchQuery))
+            return;
+
+        var query = _searchQuery.Trim();
+        for (var i = 0; i < _items.Count; i++)
+        {
+            if (MessageMatchesSearch(_items[i], query))
+                _searchMatches.Add(i);
+        }
+
+        if (!selectFirst || _searchMatches.Count == 0)
+            return;
+
+        _searchMatchCursor = 0;
+        _selectedIndex = _searchMatches[0];
+    }
+
+    private static bool MessageMatchesSearch(ChatMessage message, string query)
+    {
+        if (!string.IsNullOrEmpty(message.Text)
+            && message.Text.Contains(query, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return !string.IsNullOrWhiteSpace(message.Media?.FileName)
+               && message.Media.FileName.Contains(query, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task ReloadQuietAsync()

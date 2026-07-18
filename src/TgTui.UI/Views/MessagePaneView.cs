@@ -18,7 +18,10 @@ public sealed class MessagePaneView : View
     private readonly IApplication _app;
     private readonly MessagePaneViewModel _vm;
     private readonly ListView _list;
+    private readonly TextField _searchField;
+    private readonly Label _searchLabel;
     private readonly ObservableCollection<string> _rows = [];
+    private bool _searchOpen;
     private bool _disposed;
     private bool _syncingSelection;
 
@@ -30,6 +33,27 @@ public sealed class MessagePaneView : View
         Width = Dim.Fill();
         Height = Dim.Fill();
         CanFocus = true;
+
+        _searchLabel = new Label
+        {
+            Text = " / search in chat",
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            CanFocus = false,
+            Visible = false,
+        };
+
+        _searchField = new TextField
+        {
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Visible = false,
+            CanFocus = true,
+        };
+        _searchField.TextChanged += OnSearchTextChanged;
+        _searchField.KeyDown += OnSearchKeyDown;
 
         _list = new ListView
         {
@@ -45,7 +69,7 @@ public sealed class MessagePaneView : View
         _list.RowRender += OnRowRender;
         _list.Accepting += OnListAccepting;
 
-        Add(_list);
+        Add(_searchLabel, _searchField, _list);
         _vm.Changed += OnViewModelChanged;
         RefreshRows();
     }
@@ -58,7 +82,13 @@ public sealed class MessagePaneView : View
     /// <summary>Raised when delete / media open fails.</summary>
     public event Action<string>? ErrorOccurred;
 
-    public void FocusList() => _list.SetFocus();
+    public void FocusList()
+    {
+        if (_searchOpen)
+            _searchField.SetFocus();
+        else
+            _list.SetFocus();
+    }
 
     /// <inheritdoc />
     protected override void Dispose(bool disposing)
@@ -71,6 +101,8 @@ public sealed class MessagePaneView : View
             _list.KeyDown -= OnListKeyDown;
             _list.RowRender -= OnRowRender;
             _list.Accepting -= OnListAccepting;
+            _searchField.TextChanged -= OnSearchTextChanged;
+            _searchField.KeyDown -= OnSearchKeyDown;
         }
 
         base.Dispose(disposing);
@@ -85,8 +117,8 @@ public sealed class MessagePaneView : View
 
         var width = Math.Max(20, Frame.Width - 2);
         _rows.Clear();
-        foreach (var m in _vm.Messages)
-            _rows.Add(_vm.FormatRow(m, width));
+        for (var i = 0; i < _vm.Messages.Count; i++)
+            _rows.Add(_vm.FormatRow(_vm.Messages[i], width, i));
 
         _syncingSelection = true;
         try
@@ -157,6 +189,9 @@ public sealed class MessagePaneView : View
 
     private void OnListKeyDown(object? sender, Key key)
     {
+        if (_searchOpen)
+            return;
+
         if (key == Key.J || key == Key.CursorDown)
         {
             _vm.MoveSelection(1);
@@ -230,7 +265,97 @@ public sealed class MessagePaneView : View
         {
             _vm.JumpToLatest();
             key.Handled = true;
+            return;
         }
+
+        if (key == Key.N && key.IsShift)
+        {
+            _vm.MoveSearchMatch(-1);
+            key.Handled = true;
+            return;
+        }
+
+        if (key == Key.N && !key.IsShift)
+        {
+            if (_vm.IsSearchActive)
+            {
+                _vm.MoveSearchMatch(1);
+                key.Handled = true;
+            }
+            return;
+        }
+
+        if (key.AsRune.Value == '/' || key == (Key)'/')
+        {
+            OpenSearch();
+            key.Handled = true;
+        }
+    }
+
+    private void OnSearchTextChanged(object? sender, EventArgs e)
+    {
+        if (!_searchOpen)
+            return;
+        _vm.SearchQuery = _searchField.Text ?? "";
+    }
+
+    private void OnSearchKeyDown(object? sender, Key key)
+    {
+        if (key == Key.Esc)
+        {
+            CloseSearch(clear: true);
+            key.Handled = true;
+            return;
+        }
+
+        if (key == Key.Enter)
+        {
+            CloseSearch(clear: false);
+            key.Handled = true;
+            return;
+        }
+
+        if (key == Key.N && key.IsShift)
+        {
+            _vm.MoveSearchMatch(-1);
+            key.Handled = true;
+            return;
+        }
+
+        if (key == Key.N)
+        {
+            _vm.MoveSearchMatch(1);
+            key.Handled = true;
+        }
+    }
+
+    private void OpenSearch()
+    {
+        _searchOpen = true;
+        _searchField.Visible = true;
+        _searchLabel.Visible = false;
+        _list.Y = 1;
+        _list.Height = Dim.Fill();
+        _searchField.Text = _vm.SearchQuery;
+        _searchField.SetFocus();
+        SetNeedsLayout();
+    }
+
+    private void CloseSearch(bool clear)
+    {
+        if (!_searchOpen)
+            return;
+
+        _searchOpen = false;
+        if (clear)
+            _vm.ClearSearch();
+
+        _searchField.Visible = false;
+        _searchLabel.Visible = false;
+        _list.Y = 0;
+        _list.Height = Dim.Fill();
+        _list.SetFocus();
+        SetNeedsLayout();
     }
 
     private async Task RunAsync(Func<CancellationToken, Task> action)

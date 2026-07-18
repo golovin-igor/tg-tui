@@ -1,5 +1,5 @@
-using System.Collections.Concurrent;
 using TgTui.Core.Events;
+using TgTui.Core.Models;
 using TgTui.Core.Ports;
 using TgTui.Telegram.Mapping;
 using TL;
@@ -101,7 +101,6 @@ public sealed class WTelegramUpdateHub : IUpdateHub
 
         _peers?.Merge(updates.Users, updates.Chats);
 
-        var messageChats = new ConcurrentDictionary<long, byte>();
         var dialogsDirty = false;
 
         foreach (var update in updates.UpdateList ?? Array.Empty<Update>())
@@ -111,18 +110,18 @@ public sealed class WTelegramUpdateHub : IUpdateHub
             switch (update)
             {
                 case UpdateNewMessage { message: Message msg }:
-                    // Includes UpdateNewChannelMessage.
-                    messageChats[PeerId.FromPeer(msg.peer_id).Value] = 0;
+                    PublishMappedMessage(msg, MessageChangeKind.Added);
                     dialogsDirty = true;
                     break;
 
                 case UpdateEditMessage { message: Message msg }:
-                    // Includes UpdateEditChannelMessage.
-                    messageChats[PeerId.FromPeer(msg.peer_id).Value] = 0;
+                    PublishMappedMessage(msg, MessageChangeKind.Edited);
                     break;
 
                 case UpdateDeleteChannelMessages delChannel:
-                    messageChats[PeerId.FromChannel(delChannel.channel_id).Value] = 0;
+                    PublishDeleted(
+                        PeerId.FromChannel(delChannel.channel_id),
+                        delChannel.messages.Select(static id => new MessageId(id)).ToArray());
                     dialogsDirty = true;
                     break;
 
@@ -131,17 +130,17 @@ public sealed class WTelegramUpdateHub : IUpdateHub
                     dialogsDirty = true;
                     break;
 
-                case UpdateReadHistoryInbox { peer: Peer peer }:
-                    messageChats[PeerId.FromPeer(peer).Value] = 0;
+                case UpdateReadHistoryInbox { peer: Peer peer, max_id: var maxId }:
+                    PublishReadState(PeerId.FromPeer(peer), maxId, outboxMaxId: null);
                     dialogsDirty = true;
                     break;
 
-                case UpdateReadHistoryOutbox { peer: Peer peer }:
-                    messageChats[PeerId.FromPeer(peer).Value] = 0;
+                case UpdateReadHistoryOutbox { peer: Peer peer, max_id: var maxId }:
+                    PublishReadState(PeerId.FromPeer(peer), inboxMaxId: null, outboxMaxId: maxId);
                     break;
 
-                case UpdateReadChannelInbox { channel_id: var channelId }:
-                    messageChats[PeerId.FromChannel(channelId).Value] = 0;
+                case UpdateReadChannelInbox { channel_id: var channelId, max_id: var maxId }:
+                    PublishReadState(PeerId.FromChannel(channelId), maxId, outboxMaxId: null);
                     dialogsDirty = true;
                     break;
 
@@ -155,22 +154,84 @@ public sealed class WTelegramUpdateHub : IUpdateHub
             }
         }
 
-        // Short message forms arrive as UpdatesBase with synthetic UpdateList, but also surface peer via short types.
         if (updates is UpdateShortMessage usm)
         {
-            messageChats[PeerId.FromUser(usm.user_id).Value] = 0;
+            PublishMappedMessage(
+                new Message
+                {
+                    id = usm.id,
+                    message = usm.message,
+                    peer_id = new PeerUser { user_id = usm.user_id },
+                    date = usm.date,
+                    flags = (Message.Flags)usm.flags,
+                },
+                MessageChangeKind.Added);
             dialogsDirty = true;
         }
         else if (updates is UpdateShortChatMessage uscm)
         {
-            messageChats[PeerId.FromChat(uscm.chat_id).Value] = 0;
+            PublishMappedMessage(
+                new Message
+                {
+                    id = uscm.id,
+                    message = uscm.message,
+                    peer_id = new PeerChat { chat_id = uscm.chat_id },
+                    date = uscm.date,
+                    flags = (Message.Flags)uscm.flags,
+                },
+                MessageChangeKind.Added);
             dialogsDirty = true;
         }
 
-        foreach (var chatValue in messageChats.Keys)
-            Publish(new MessagesChanged(new Core.Models.ChatId(chatValue)));
-
         if (dialogsDirty)
             Publish(new DialogsChanged());
+    }
+
+    private void PublishMappedMessage(Message msg, MessageChangeKind kind)
+    {
+        if (msg.peer_id is null)
+            return;
+
+        var chatId = PeerId.FromPeer(msg.peer_id);
+        var mapped = MapMessage(msg, chatId);
+        Publish(new MessagesChanged(chatId, kind, mapped));
+    }
+
+    private void PublishDeleted(ChatId chatId, IReadOnlyList<MessageId> deletedIds)
+    {
+        if (deletedIds.Count == 0)
+            return;
+
+        Publish(new MessagesChanged(chatId, MessageChangeKind.Deleted, DeletedIds: deletedIds));
+    }
+
+    private void PublishReadState(ChatId chatId, int? inboxMaxId, int? outboxMaxId)
+    {
+        var curInbox = 0;
+        var curOutbox = 0;
+        _peers?.TryGetReadMarkers(chatId, out curInbox, out curOutbox);
+        var inbox = inboxMaxId ?? curInbox;
+        var outbox = outboxMaxId ?? curOutbox;
+        if (inboxMaxId is not null || outboxMaxId is not null)
+            _peers?.SetReadMarkers(chatId, inbox, outbox);
+
+        Publish(new MessagesChanged(
+            chatId,
+            MessageChangeKind.ReadStateChanged,
+            ReadInboxMaxId: inboxMaxId ?? inbox,
+            ReadOutboxMaxId: outboxMaxId ?? outbox));
+    }
+
+    private ChatMessage MapMessage(Message msg, ChatId chatId)
+    {
+        int? readInbox = null;
+        int? readOutbox = null;
+        if (_peers?.TryGetReadMarkers(chatId, out var inboxMax, out var outboxMax) == true)
+        {
+            readInbox = inboxMax;
+            readOutbox = outboxMax;
+        }
+
+        return TelegramMapper.MapMessage(msg, chatId, readInbox, readOutbox);
     }
 }

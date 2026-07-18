@@ -40,6 +40,9 @@ public class WTelegramUpdateHubTests
         hub.HandleUpdates(updates);
 
         messages.Should().ContainSingle(m => m.ChatId == PeerId.FromUser(55));
+        messages[0].Kind.Should().Be(MessageChangeKind.Added);
+        messages[0].Message.Should().NotBeNull();
+        messages[0].Message!.Text.Should().Be("hi");
         dialogs.Should().ContainSingle();
     }
 
@@ -67,6 +70,7 @@ public class WTelegramUpdateHubTests
         });
 
         messages.Should().ContainSingle(m => m.ChatId == PeerId.FromChat(8));
+        messages[0].Kind.Should().Be(MessageChangeKind.ReadStateChanged);
         dialogs.Should().ContainSingle();
     }
 

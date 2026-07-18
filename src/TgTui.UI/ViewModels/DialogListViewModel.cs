@@ -17,6 +17,7 @@ public sealed class DialogListViewModel : IDisposable
     private string _filter = "";
     private int _selectedIndex;
     private bool _disposed;
+    private CancellationTokenSource? _reloadCts;
 
     public DialogListViewModel(IDialogService dialogs, IUpdateHub? hub = null)
     {
@@ -149,6 +150,8 @@ public sealed class DialogListViewModel : IDisposable
         if (_disposed)
             return;
         _disposed = true;
+        _reloadCts?.Cancel();
+        _reloadCts?.Dispose();
         if (_hub is not null)
             _hub.DialogsChanged -= OnDialogsChanged;
     }
@@ -156,14 +159,28 @@ public sealed class DialogListViewModel : IDisposable
     private void OnDialogsChanged(DialogsChanged e)
     {
         _ = e;
-        _ = ReloadQuietAsync();
+        ScheduleReloadDebounced();
     }
 
-    private async Task ReloadQuietAsync()
+    private void ScheduleReloadDebounced()
+    {
+        _reloadCts?.Cancel();
+        _reloadCts?.Dispose();
+        _reloadCts = new CancellationTokenSource();
+        var token = _reloadCts.Token;
+        _ = ReloadDebouncedAsync(token);
+    }
+
+    private async Task ReloadDebouncedAsync(CancellationToken cancellationToken)
     {
         try
         {
-            await LoadAsync().ConfigureAwait(false);
+            await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+            await LoadAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer dialogs update burst.
         }
         catch
         {

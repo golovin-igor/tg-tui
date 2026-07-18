@@ -39,6 +39,10 @@ public static class KeyBindings
     public const string MessageFocusDialogsAction = "Focus dialog list";
     public const string MessageJumpLatest = "G";
     public const string MessageJumpLatestAction = "Jump to latest";
+    public const string MessageSearch = "/";
+    public const string MessageSearchAction = "Search in open chat";
+    public const string MessageSearchNext = "n / N";
+    public const string MessageSearchNextAction = "Next / previous match";
 
     // --- Composer ---
     public const string ComposerSend = "Enter";
@@ -79,7 +83,9 @@ public static class KeyBindings
             (MessageExpand, MessageExpandAction),
             (MessageFocusComposer, MessageFocusComposerAction),
             (MessageFocusDialogs, MessageFocusDialogsAction),
-            (MessageJumpLatest, MessageJumpLatestAction));
+            (MessageJumpLatest, MessageJumpLatestAction),
+            (MessageSearch, MessageSearchAction),
+            (MessageSearchNext, MessageSearchNextAction));
 
         AppendSection(sb, "Composer",
             (ComposerSend, ComposerSendAction),

@@ -1,4 +1,5 @@
 using FluentAssertions;
+using TgTui.Core.Events;
 using TgTui.Core.Models;
 using TgTui.Core.Ports;
 using TgTui.UI.Fakes;
@@ -79,6 +80,47 @@ public sealed class MessagePaneViewModelTests
         await vm.ReloadAsync(preserveScrollPosition: true);
 
         vm.SelectedIndex.Should().Be(vm.Messages.Count - 1);
+    }
+
+    [Fact]
+    public async Task IncrementalAdded_preserves_scroll_when_not_at_latest()
+    {
+        var hub = new TestUpdateHub();
+        var messages = new FakeMessageService();
+        using var vm = new MessagePaneViewModel(messages, new FakeMediaService(), hub);
+        await vm.OpenChatAsync(Alice());
+        vm.SelectedIndex = 5;
+        var selectedId = vm.Selected!.Id;
+
+        hub.Publish(new MessagesChanged(
+            new ChatId(1),
+            MessageChangeKind.Added,
+            new ChatMessage
+            {
+                Id = new MessageId(9999),
+                ChatId = new ChatId(1),
+                Text = "incremental",
+                IsOutgoing = false,
+                SentAt = DateTimeOffset.Now,
+                IsRead = true,
+            }));
+
+        await WaitUntilAsync(() => vm.Messages.Any(m => m.Id.Value == 9999));
+        vm.Selected!.Id.Should().Be(selectedId);
+        vm.Messages[^1].Text.Should().Be("incremental");
+    }
+
+    [Fact]
+    public async Task SearchQuery_finds_matches_and_moves_selection()
+    {
+        var messages = new FakeMessageService();
+        using var vm = new MessagePaneViewModel(messages, new FakeMediaService());
+        await vm.OpenChatAsync(Alice());
+
+        vm.SearchQuery = "Alice thread";
+        vm.SearchMatchCount.Should().BeGreaterThan(0);
+        vm.MoveSearchMatch(1).Should().BeTrue();
+        vm.Selected!.Text.Should().Contain("Alice thread");
     }
 
     [Fact]
@@ -381,6 +423,20 @@ public sealed class MessagePaneViewModelTests
         }
 
         condition().Should().BeTrue("condition should become true within timeout");
+    }
+
+    private sealed class TestUpdateHub : IUpdateHub
+    {
+#pragma warning disable CS0067
+        public event Action<DialogsChanged>? DialogsChanged;
+        public event Action<ConnectionStateChanged>? ConnectionStateChanged;
+        public event Action<AuthStateChanged>? AuthStateChanged;
+#pragma warning restore CS0067
+        public event Action<MessagesChanged>? MessagesChanged;
+
+        public Task StartAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public void Publish(MessagesChanged e) => MessagesChanged?.Invoke(e);
     }
 
     private sealed class SingleChatMessageService : IMessageService

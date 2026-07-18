@@ -42,6 +42,10 @@ public static class SixelImageRenderer
         if (palette.Count == 0)
             return HalfBlockImageRenderer.UnavailablePlaceholder;
 
+        var colorToIndex = new Dictionary<uint, int>(palette.Count);
+        for (var i = 0; i < palette.Count; i++)
+            colorToIndex[Quantize(palette[i])] = i;
+
         var sb = new StringBuilder(width * ((height + 5) / 6) * 8 + palette.Count * 24);
         sb.Append("\u001bPq");
 
@@ -65,7 +69,8 @@ public static class SixelImageRenderer
                     var value = 0;
                     for (var bit = 0; bit < bandHeight; bit++)
                     {
-                        if (palette.IndexOf(bitmap.GetPixel(x, y + bit)) == colorIndex)
+                        if (colorToIndex.TryGetValue(Quantize(bitmap.GetPixel(x, y + bit)), out var idx)
+                            && idx == colorIndex)
                             value |= 1 << bit;
                     }
 
@@ -88,7 +93,7 @@ public static class SixelImageRenderer
             for (var x = 0; x < bitmap.Width; x++)
             {
                 var pixel = bitmap.GetPixel(x, y);
-                if (pixel.A < 16)
+                if (pixel.Alpha < 16)
                     continue;
 
                 var key = Quantize(pixel);
