@@ -46,6 +46,7 @@ public sealed class ChatShellView : View
         _messageVm = new MessagePaneViewModel(_deps.Messages, _deps.Media, _deps.Updates);
         _composerVm = new ComposerViewModel(_deps.Messages, _deps.Drafts);
         _composerVm.SetReplyPreviewResolver(_messageVm.GetReplySnippet);
+        _composerVm.Changed += OnComposerChanged;
 
         _statusBar = new StatusBarView(_app, _deps.Updates)
         {
@@ -229,6 +230,7 @@ public sealed class ChatShellView : View
             _composer.MessageSubmitted -= OnMessageSubmitted;
             _composer.SendFailed -= OnSendFailed;
             _composer.LeaveRequested -= OnComposerLeaveRequested;
+            _composerVm.Changed -= OnComposerChanged;
 
             _dialogVm.Dispose();
             _messageVm.Dispose();
@@ -263,6 +265,13 @@ public sealed class ChatShellView : View
         }
     }
 
+    private void OnComposerChanged() =>
+        Marshal(() =>
+        {
+            _messageVm.SetEditingMessageId(_composerVm.EditMessageId);
+            UpdateChrome();
+        });
+
     private void OnDialogOpened(DialogItem dialog) => _ = OpenDialogAsync(dialog);
 
     private void OnShellError(string message) =>
@@ -279,6 +288,7 @@ public sealed class ChatShellView : View
             await _composerVm.BindChatAsync(dialog.Id).ConfigureAwait(true);
             Marshal(() =>
             {
+                _dialogVm.SetActiveChatId(dialog.Id);
                 _header.Text = $" {dialog.Title}";
                 _messagesFrame.Title = dialog.Title;
                 SetFocusZone(FocusZone.Messages);
@@ -315,6 +325,7 @@ public sealed class ChatShellView : View
         Marshal(() =>
         {
             _messageVm.PresentOptimistic(message);
+            _dialogVm.ApplyLocalMessage(message.ChatId, message, incrementUnread: false);
             UpdateChrome();
         });
     }
@@ -326,11 +337,22 @@ public sealed class ChatShellView : View
             if (outcome.IsEdit)
             {
                 if (outcome.EditedMessageId is { } editId && outcome.EditedText is not null)
+                {
                     _messageVm.ApplyLocalEdit(editId, outcome.EditedText);
+                    if (_messageVm.ChatId is { } chatId)
+                    {
+                        var edited = _messageVm.Messages.FirstOrDefault(m => m.Id.Value == editId.Value);
+                        if (edited is not null)
+                            _dialogVm.ApplyLocalMessage(chatId, edited, incrementUnread: false);
+                    }
+                }
+
+                _messageVm.SetEditingMessageId(null);
             }
             else if (outcome.OptimisticMessage is { } opt && outcome.ConfirmedMessage is { } confirmed)
             {
                 _messageVm.ConfirmOptimistic(opt.Id, confirmed);
+                _dialogVm.ApplyLocalMessage(confirmed.ChatId, confirmed, incrementUnread: false);
             }
 
             _messageVm.JumpToLatest();
@@ -379,11 +401,33 @@ public sealed class ChatShellView : View
         var zone = _focusZone switch
         {
             FocusZone.Dialogs => "focus: dialogs",
-            FocusZone.Messages => "focus: messages",
-            FocusZone.Composer => "focus: composer",
+            FocusZone.Messages => BuildMessagesContext(),
+            FocusZone.Composer => BuildComposerContext(),
             _ => "",
         };
         _statusBar.SetContext(zone);
+    }
+
+    private string BuildMessagesContext()
+    {
+        if (_composerVm.EditMessageId is { } editId)
+            return $"focus: messages · editing #{editId.Value}";
+
+        if (_messageVm.EditingMessageId is { } paneEdit)
+            return $"focus: messages · editing #{paneEdit.Value}";
+
+        return "focus: messages";
+    }
+
+    private string BuildComposerContext()
+    {
+        if (_composerVm.EditMessageId is { } editId)
+            return $"focus: composer · editing #{editId.Value}";
+
+        if (_composerVm.ReplyToId is { } replyId)
+            return $"focus: composer · reply #{replyId.Value}";
+
+        return "focus: composer";
     }
 
     private static FocusZone NextZone(FocusZone z) => z switch

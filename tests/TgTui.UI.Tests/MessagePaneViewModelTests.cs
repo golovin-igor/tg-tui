@@ -83,6 +83,21 @@ public sealed class MessagePaneViewModelTests
     }
 
     [Fact]
+    public async Task FormatRow_uses_two_line_layout_with_editing_marker()
+    {
+        var messages = new FakeMessageService();
+        using var vm = new MessagePaneViewModel(messages, new FakeMediaService());
+        await vm.OpenChatAsync(Alice());
+        var msg = vm.Messages[^1];
+        vm.SetEditingMessageId(msg.Id);
+
+        var row = vm.FormatRow(msg, 80, vm.Messages.Count - 1);
+        row.Should().Contain("✎");
+        row.Should().Contain("\n");
+        row.Should().StartWith("✎");
+    }
+
+    [Fact]
     public async Task IncrementalAdded_preserves_scroll_when_not_at_latest()
     {
         var hub = new TestUpdateHub();

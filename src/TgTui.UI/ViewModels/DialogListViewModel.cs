@@ -16,6 +16,7 @@ public sealed class DialogListViewModel : IDisposable
     private readonly List<DialogItem> _all = [];
     private string _filter = "";
     private int _selectedIndex;
+    private ChatId? _activeChatId;
     private bool _disposed;
     private CancellationTokenSource? _reloadCts;
 
@@ -24,7 +25,10 @@ public sealed class DialogListViewModel : IDisposable
         _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
         _hub = hub;
         if (_hub is not null)
+        {
             _hub.DialogsChanged += OnDialogsChanged;
+            _hub.MessagesChanged += OnMessagesChanged;
+        }
     }
 
     /// <summary>Raised when the filtered list or selection changes (may be off the UI thread).</summary>
@@ -64,6 +68,9 @@ public sealed class DialogListViewModel : IDisposable
             ? Items[_selectedIndex]
             : null;
 
+    /// <summary>Chat currently open in the message pane (suppresses unread bumps).</summary>
+    public void SetActiveChatId(ChatId? chatId) => _activeChatId = chatId;
+
     public async Task LoadAsync(CancellationToken cancellationToken = default)
     {
         var list = await _dialogs.GetDialogsAsync(cancellationToken).ConfigureAwait(false);
@@ -78,6 +85,13 @@ public sealed class DialogListViewModel : IDisposable
         if (Items.Count == 0)
             return;
         SelectedIndex = _selectedIndex + delta;
+    }
+
+    /// <summary>Updates preview/time locally after send/receive without refetching all dialogs.</summary>
+    public void ApplyLocalMessage(ChatId chatId, ChatMessage message, bool incrementUnread = false)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        ApplyMessageUpdate(chatId, message, incrementUnread && !message.IsOutgoing);
     }
 
     /// <summary>Clears the unread badge for a dialog after mark-as-read (local optimistic).</summary>
@@ -116,34 +130,10 @@ public sealed class DialogListViewModel : IDisposable
         var pinned = !item.IsPinned;
         await _dialogs.SetPinnedAsync(item.Id, pinned, cancellationToken).ConfigureAwait(false);
         ReplaceItem(Clone(item, isPinned: pinned));
-        // Keep pins near the top like Telegram after a local toggle.
-        _all.Sort(static (a, b) =>
-        {
-            var pin = b.IsPinned.CompareTo(a.IsPinned);
-            if (pin != 0)
-                return pin;
-            return Nullable.Compare(b.LastMessageAt, a.LastMessageAt);
-        });
+        SortDialogs();
         ApplyFilter(preserveSelection: true);
         RaiseChanged();
     }
-
-    private static DialogItem Clone(
-        DialogItem item,
-        bool? isMuted = null,
-        bool? isPinned = null,
-        int? unreadCount = null) =>
-        new()
-        {
-            Id = item.Id,
-            Title = item.Title,
-            LastMessagePreview = item.LastMessagePreview,
-            LastMessageAt = item.LastMessageAt,
-            UnreadCount = unreadCount ?? item.UnreadCount,
-            IsPinned = isPinned ?? item.IsPinned,
-            IsMuted = isMuted ?? item.IsMuted,
-            AvatarLetter = item.AvatarLetter,
-        };
 
     public void Dispose()
     {
@@ -153,13 +143,61 @@ public sealed class DialogListViewModel : IDisposable
         _reloadCts?.Cancel();
         _reloadCts?.Dispose();
         if (_hub is not null)
+        {
             _hub.DialogsChanged -= OnDialogsChanged;
+            _hub.MessagesChanged -= OnMessagesChanged;
+        }
     }
 
     private void OnDialogsChanged(DialogsChanged e)
     {
         _ = e;
         ScheduleReloadDebounced();
+    }
+
+    private void OnMessagesChanged(MessagesChanged e)
+    {
+        switch (e.Kind)
+        {
+            case MessageChangeKind.Added when e.Message is not null:
+                ApplyMessageUpdate(e.ChatId, e.Message, incrementUnread: !e.Message.IsOutgoing);
+                break;
+            case MessageChangeKind.Edited when e.Message is not null:
+                ApplyMessageUpdate(e.ChatId, e.Message, incrementUnread: false);
+                break;
+            case MessageChangeKind.ReadStateChanged when _activeChatId?.Value == e.ChatId.Value:
+                ClearUnread(e.ChatId);
+                break;
+            case MessageChangeKind.Deleted:
+                ScheduleReloadDebounced();
+                break;
+        }
+    }
+
+    private void ApplyMessageUpdate(ChatId chatId, ChatMessage message, bool incrementUnread)
+    {
+        var idx = _all.FindIndex(d => d.Id.Value == chatId.Value);
+        if (idx < 0)
+        {
+            ScheduleReloadDebounced();
+            return;
+        }
+
+        var item = _all[idx];
+        var isActive = _activeChatId?.Value == chatId.Value;
+        var unread = item.UnreadCount;
+        if (incrementUnread && !isActive)
+            unread++;
+
+        _all[idx] = Clone(
+            item,
+            lastMessagePreview: ChatMessagePreview.FromMessage(message),
+            lastMessageAt: message.SentAt,
+            unreadCount: isActive ? 0 : unread);
+
+        SortDialogs();
+        ApplyFilter(preserveSelection: true);
+        RaiseChanged();
     }
 
     private void ScheduleReloadDebounced()
@@ -201,6 +239,36 @@ public sealed class DialogListViewModel : IDisposable
 
         ApplyFilter(preserveSelection: true);
     }
+
+    private void SortDialogs()
+    {
+        _all.Sort(static (a, b) =>
+        {
+            var pin = b.IsPinned.CompareTo(a.IsPinned);
+            if (pin != 0)
+                return pin;
+            return Nullable.Compare(b.LastMessageAt, a.LastMessageAt);
+        });
+    }
+
+    private static DialogItem Clone(
+        DialogItem item,
+        string? lastMessagePreview = null,
+        DateTimeOffset? lastMessageAt = null,
+        bool? isMuted = null,
+        bool? isPinned = null,
+        int? unreadCount = null) =>
+        new()
+        {
+            Id = item.Id,
+            Title = item.Title,
+            LastMessagePreview = lastMessagePreview ?? item.LastMessagePreview,
+            LastMessageAt = lastMessageAt ?? item.LastMessageAt,
+            UnreadCount = unreadCount ?? item.UnreadCount,
+            IsPinned = isPinned ?? item.IsPinned,
+            IsMuted = isMuted ?? item.IsMuted,
+            AvatarLetter = item.AvatarLetter,
+        };
 
     private void ApplyFilter(bool preserveSelection)
     {

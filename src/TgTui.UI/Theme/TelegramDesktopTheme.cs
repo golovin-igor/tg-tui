@@ -26,11 +26,15 @@ public static class TelegramDesktopTheme
     /// <summary>Custom scheme name for outgoing message bubbles.</summary>
     public const string MessageOutgoingSchemeName = "MessageOutgoing";
 
+    /// <summary>Custom scheme name for the message currently being edited in the composer.</summary>
+    public const string MessageEditingSchemeName = "MessageEditing";
+
     public static TgAttribute WindowNormal => new(PrimaryText, DeepBackground);
     public static TgAttribute PanelNormal => new(PrimaryText, PanelBackground);
     public static TgAttribute DialogSelected => new(PrimaryText, Selection);
     public static TgAttribute MessageIncoming => new(PrimaryText, PanelBackground);
     public static TgAttribute MessageOutgoing => new(PrimaryText, Selection);
+    public static TgAttribute MessageEditing => new(Accent, new Color("#3a4a5c"));
     public static TgAttribute AccentOnDeep => new(Accent, DeepBackground);
     public static TgAttribute AccentOnPanel => new(Accent, PanelBackground);
     public static TgAttribute MutedOnDeep => new(MutedText, DeepBackground);
@@ -51,6 +55,7 @@ public static class TelegramDesktopTheme
         SchemeManager.AddScheme(DialogSelectedSchemeName, CreateDialogSelectedScheme());
         SchemeManager.AddScheme(MessageIncomingSchemeName, CreateMessageIncomingScheme());
         SchemeManager.AddScheme(MessageOutgoingSchemeName, CreateMessageOutgoingScheme());
+        SchemeManager.AddScheme(MessageEditingSchemeName, CreateMessageEditingScheme());
     }
 
     private static Scheme CreateBaseScheme() => new()
@@ -127,5 +132,13 @@ public static class TelegramDesktopTheme
         Focus = MessageOutgoing,
         HotNormal = new TgAttribute(Accent, Selection),
         Disabled = new TgAttribute(MutedText, Selection),
+    };
+
+    private static Scheme CreateMessageEditingScheme() => new()
+    {
+        Normal = MessageEditing,
+        Focus = MessageEditing,
+        HotNormal = new TgAttribute(PrimaryText, new Color("#3a4a5c")),
+        Disabled = MutedOnPanel,
     };
 }

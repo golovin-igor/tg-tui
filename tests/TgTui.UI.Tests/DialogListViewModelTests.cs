@@ -1,5 +1,7 @@
 using FluentAssertions;
+using TgTui.Core.Events;
 using TgTui.Core.Models;
+using TgTui.Core.Ports;
 using TgTui.UI.Fakes;
 using TgTui.UI.ViewModels;
 
@@ -32,14 +34,96 @@ public sealed class DialogListViewModelTests
         await vm.LoadAsync();
 
         var withUnread = vm.Items.FirstOrDefault(d => d.UnreadCount > 0);
-        if (withUnread is null)
-        {
-            // Seeded fakes always have at least one unread dialog.
-            vm.Items.Should().Contain(d => d.UnreadCount > 0);
-            return;
-        }
+        withUnread.Should().NotBeNull();
 
-        vm.ClearUnread(withUnread.Id);
+        vm.ClearUnread(withUnread!.Id);
         vm.Items.First(d => d.Id.Value == withUnread.Id.Value).UnreadCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ApplyLocalMessage_updates_preview_without_reload()
+    {
+        var dialogs = new FakeDialogService();
+        using var vm = new DialogListViewModel(dialogs);
+        await vm.LoadAsync();
+
+        var alice = vm.Items.First(d => d.Id.Value == 1);
+        vm.ApplyLocalMessage(alice.Id, new ChatMessage
+        {
+            Id = new MessageId(500),
+            ChatId = alice.Id,
+            Text = "local preview text",
+            IsOutgoing = true,
+            SentAt = DateTimeOffset.Now,
+            IsRead = true,
+        });
+
+        var updated = vm.Items.First(d => d.Id.Value == 1);
+        updated.LastMessagePreview.Should().Be("local preview text");
+    }
+
+    [Fact]
+    public async Task MessagesChanged_Added_increments_unread_when_chat_not_active()
+    {
+        var hub = new DialogTestHub();
+        var dialogs = new FakeDialogService();
+        using var vm = new DialogListViewModel(dialogs, hub);
+        await vm.LoadAsync();
+
+        var before = vm.Items.First(d => d.Id.Value == 1).UnreadCount;
+        hub.Publish(new MessagesChanged(
+            new ChatId(1),
+            MessageChangeKind.Added,
+            new ChatMessage
+            {
+                Id = new MessageId(501),
+                ChatId = new ChatId(1),
+                Text = "ping",
+                IsOutgoing = false,
+                SentAt = DateTimeOffset.Now,
+                IsRead = false,
+            }));
+
+        vm.Items.First(d => d.Id.Value == 1).UnreadCount.Should().Be(before + 1);
+        vm.Items.First(d => d.Id.Value == 1).LastMessagePreview.Should().Be("ping");
+    }
+
+    [Fact]
+    public async Task MessagesChanged_Added_does_not_increment_unread_for_active_chat()
+    {
+        var hub = new DialogTestHub();
+        var dialogs = new FakeDialogService();
+        using var vm = new DialogListViewModel(dialogs, hub);
+        await vm.LoadAsync();
+        vm.SetActiveChatId(new ChatId(1));
+
+        hub.Publish(new MessagesChanged(
+            new ChatId(1),
+            MessageChangeKind.Added,
+            new ChatMessage
+            {
+                Id = new MessageId(502),
+                ChatId = new ChatId(1),
+                Text = "active chat msg",
+                IsOutgoing = false,
+                SentAt = DateTimeOffset.Now,
+                IsRead = false,
+            }));
+
+        vm.Items.First(d => d.Id.Value == 1).UnreadCount.Should().Be(0);
+    }
+
+    private sealed class DialogTestHub : IUpdateHub
+    {
+#pragma warning disable CS0067
+        public event Action<DialogsChanged>? DialogsChanged;
+        public event Action<ConnectionStateChanged>? ConnectionStateChanged;
+        public event Action<AuthStateChanged>? AuthStateChanged;
+#pragma warning restore CS0067
+        public event Action<MessagesChanged>? MessagesChanged;
+
+        public Task StartAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public void Publish(MessagesChanged e) => MessagesChanged?.Invoke(e);
     }
 }

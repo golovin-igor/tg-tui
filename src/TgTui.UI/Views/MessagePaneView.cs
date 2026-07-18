@@ -17,6 +17,7 @@ public sealed class MessagePaneView : View
 {
     private readonly IApplication _app;
     private readonly MessagePaneViewModel _vm;
+    private readonly Label _editBanner;
     private readonly ListView _list;
     private readonly TextField _searchField;
     private readonly Label _searchLabel;
@@ -33,6 +34,17 @@ public sealed class MessagePaneView : View
         Width = Dim.Fill();
         Height = Dim.Fill();
         CanFocus = true;
+
+        _editBanner = new Label
+        {
+            Text = "",
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = 1,
+            CanFocus = false,
+            Visible = false,
+        };
 
         _searchLabel = new Label
         {
@@ -63,13 +75,12 @@ public sealed class MessagePaneView : View
             Height = Dim.Fill(),
             CanFocus = true,
         };
-        _list.SetSource(_rows);
         _list.ValueChanged += OnListValueChanged;
         _list.KeyDown += OnListKeyDown;
         _list.RowRender += OnRowRender;
         _list.Accepting += OnListAccepting;
 
-        Add(_searchLabel, _searchField, _list);
+        Add(_editBanner, _searchLabel, _searchField, _list);
         _vm.Changed += OnViewModelChanged;
         RefreshRows();
     }
@@ -114,6 +125,8 @@ public sealed class MessagePaneView : View
     {
         if (_disposed)
             return;
+
+        SyncEditBanner();
 
         var width = Math.Max(20, Frame.Width - 2);
         _rows.Clear();
@@ -182,6 +195,12 @@ public sealed class MessagePaneView : View
             return;
 
         var msg = _vm.Messages[e.Row];
+        if (_vm.EditingMessageId is { } editId && msg.Id.Value == editId.Value)
+        {
+            e.RowAttribute = TelegramDesktopTheme.MessageEditing;
+            return;
+        }
+
         e.RowAttribute = msg.IsOutgoing
             ? TelegramDesktopTheme.MessageOutgoing
             : TelegramDesktopTheme.MessageIncoming;
@@ -334,9 +353,8 @@ public sealed class MessagePaneView : View
         _searchOpen = true;
         _searchField.Visible = true;
         _searchLabel.Visible = false;
-        _list.Y = 1;
-        _list.Height = Dim.Fill();
         _searchField.Text = _vm.SearchQuery;
+        LayoutChrome();
         _searchField.SetFocus();
         SetNeedsLayout();
     }
@@ -352,10 +370,55 @@ public sealed class MessagePaneView : View
 
         _searchField.Visible = false;
         _searchLabel.Visible = false;
-        _list.Y = 0;
-        _list.Height = Dim.Fill();
+        LayoutChrome();
         _list.SetFocus();
         SetNeedsLayout();
+    }
+
+    private void SyncEditBanner()
+    {
+        if (_vm.EditingMessageId is { } id)
+        {
+            _editBanner.Text = $" ✎ Editing #{id.Value} — apply in composer · Esc cancels";
+            _editBanner.Visible = true;
+        }
+        else
+        {
+            _editBanner.Text = "";
+            _editBanner.Visible = false;
+        }
+
+        LayoutChrome();
+    }
+
+    private void LayoutChrome()
+    {
+        var top = 0;
+        if (_editBanner.Visible)
+        {
+            _editBanner.X = 0;
+            _editBanner.Y = 0;
+            _editBanner.Width = Dim.Fill();
+            top = 1;
+        }
+
+        if (_searchOpen)
+        {
+            _searchField.X = 0;
+            _searchField.Y = top;
+            _searchField.Width = Dim.Fill();
+            _list.X = 0;
+            _list.Y = top + 1;
+            _list.Width = Dim.Fill();
+            _list.Height = Dim.Fill();
+        }
+        else
+        {
+            _list.X = 0;
+            _list.Y = top;
+            _list.Width = Dim.Fill();
+            _list.Height = Dim.Fill();
+        }
     }
 
     private async Task RunAsync(Func<CancellationToken, Task> action)

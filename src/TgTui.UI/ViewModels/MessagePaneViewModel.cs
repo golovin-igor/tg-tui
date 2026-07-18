@@ -99,6 +99,17 @@ public sealed class MessagePaneViewModel : IDisposable
     /// <summary>Reply target set by message-pane <c>r</c>; composer reads/clears this.</summary>
     public MessageId? ReplyToId { get; set; }
 
+    /// <summary>Message currently being edited in the composer (highlights row in the list).</summary>
+    public MessageId? EditingMessageId { get; private set; }
+
+    public void SetEditingMessageId(MessageId? messageId)
+    {
+        if (EditingMessageId == messageId)
+            return;
+        EditingMessageId = messageId;
+        RaiseChanged();
+    }
+
     /// <summary>One-line snippet of a message for reply quotes (null when not in the open chat).</summary>
     public string? GetReplySnippet(MessageId replyToId)
     {
@@ -527,7 +538,19 @@ public sealed class MessagePaneViewModel : IDisposable
             searchMark = _searchMatchCursor >= 0 && _searchMatches[_searchMatchCursor] == rowIndex ? "»" : "·";
 
         var align = message.IsOutgoing ? "→" : "←";
-        var line = $"{searchMark}{align} {time}{receipt}{edited} {reply}{body}";
+        var editing = EditingMessageId?.Value == message.Id.Value ? "✎ " : "";
+        var meta = $"{searchMark}{editing}{align} {time}{receipt}{edited}";
+        if (!string.IsNullOrWhiteSpace(reply))
+            meta += " " + reply.TrimEnd();
+
+        var bodyLine = string.IsNullOrWhiteSpace(body) ? "…" : body;
+        var metaLine = TruncateLine(meta.TrimEnd(), maxWidth);
+        var bodyIndented = TruncateLine("  " + bodyLine, maxWidth);
+        return $"{metaLine}\n{bodyIndented}";
+    }
+
+    private static string TruncateLine(string line, int maxWidth)
+    {
         if (maxWidth > 8 && line.Length > maxWidth)
             return line[..(maxWidth - 1)] + "…";
         return line;
